@@ -2077,8 +2077,8 @@ if (hist_fld_active('Q030')) then
       call outfld('TREFHTMN', cam_in%tref,      pcols, lchnk)
       call outfld('QREFHT',   cam_in%qref,      pcols, lchnk)
       call outfld('U10',      cam_in%u10,       pcols, lchnk)
-      call outfld('UGUST',    cam_in%ugustOut,  pcols, lchnk)
-      call outfld('U10WITHGUSTS',cam_in%u10withGusts, pcols, lchnk)
+!      call outfld('UGUST',    cam_in%ugustOut,  pcols, lchnk)
+!      call outfld('U10WITHGUSTS',cam_in%u10withGusts, pcols, lchnk)
 
       !
       ! Calculate and output reference height RH (RHREFHT)
