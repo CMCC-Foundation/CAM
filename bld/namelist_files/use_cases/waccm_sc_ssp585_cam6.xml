@@ -59,6 +59,18 @@
     <soag_bg_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_SOAGx1.5_biogenic_surface_mol_175001-210101_0.9x1.25_c20190226.nc</soag_bg_srf_file>
     <soag_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_SOAGx1.5_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</soag_bb_srf_file>
 
+<BENZENE_an_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_BENZENE_anthro_surface_mol_175001-210101_0.9x1.25_c20190224.nc</BENZENE_an_srf_file>
+<BENZENE_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_BENZENE_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</BENZENE_bb_srf_file>
+<ISOP_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_ISOP_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</ISOP_bb_srf_file>
+<IVOC_an_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_IVOC_anthro_surface_mol_175001-210101_0.9x1.25_c20190224.nc</IVOC_an_srf_file>
+<IVOC_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_IVOC_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</IVOC_bb_srf_file>
+<MTERP_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_MTERP_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</MTERP_bb_srf_file>
+<SVOC_an_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_SVOC_anthro_surface_mol_175001-210101_0.9x1.25_c20190224.nc</SVOC_an_srf_file>
+<SVOC_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_SVOC_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</SVOC_bb_srf_file>
+<TOLUENE_an_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_TOLUENE_anthro_surface_mol_175001-210101_0.9x1.25_c20190224.nc</TOLUENE_an_srf_file>
+<TOLUENE_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_TOLUENE_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</TOLUENE_bb_srf_file>
+<XYLENES_an_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_XYLENES_anthro_surface_mol_175001-210101_0.9x1.25_c20190224.nc</XYLENES_an_srf_file>
+<XYLENES_bb_srf_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_XYLENES_bb_surface_mol_175001-210101_0.9x1.25_c20190224.nc</XYLENES_bb_srf_file>
     <!-- other emissions files can be needed, but need first to be downloaded, since not used before -->
     
     <so4_a1_an_ext_file>atm/cam/chem/emis/emissions_ssp585/emissions-cmip6-ScenarioMIP_IAMC-REMIND-MAGPIE-ssp585-1-1_so4_a1_anthro-ene_vertical_mol_175001-210101_0.9x1.25_c20190224.nc</so4_a1_an_ext_file>
