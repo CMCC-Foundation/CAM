@@ -100,6 +100,13 @@
     fxtag = hemco-cesm1_2_1_hemco3_6_3_cesm
     fxrequired = AlwaysRequired
 
+[submodule "HEMCO"]
+    path = src/hemco/HEMCO
+    url = https://github.com/geoschem/hemco.git
+    fxrequired = AlwaysRequired
+    fxtag = 3.6.3-cesm
+    fxDONOTUSEurl = https://github.com/geoschem/hemco.git
+
 [submodule "rte-rrtmgp"]
     path = src/physics/rrtmgp/ext
     url = https://github.com/earth-system-radiation/rte-rrtmgp.git
