@@ -94,11 +94,11 @@
     fxtag = 14.1.2
     fxrequired = AlwaysRequired
 
-#[submodule "hemco"]
-#    path = src/hemco
-#    url = https://github.com/ESCOMP/HEMCO_CESM.git
-#    fxtag = hemco-cesm1_2_1_hemco3_6_3_cesm
-#    fxrequired = AlwaysRequired
+[submodule "hemco"]
+    path = src/hemco
+    url = https://github.com/ESCOMP/HEMCO_CESM.git
+    fxtag = hemco-cesm1_2_1_hemco3_6_3_cesm
+    fxrequired = AlwaysRequired
 
 [submodule "rte-rrtmgp"]
     path = src/physics/rrtmgp/ext
