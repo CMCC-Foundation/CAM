@@ -21,7 +21,7 @@
 #src/atmos_phys
 #src/dynamics/mpas/dycore
 #share
-#src/hemco
+!src/hemco/HEMCO
 # Ignore compiled python
 buildnmlc
 buildcppc
