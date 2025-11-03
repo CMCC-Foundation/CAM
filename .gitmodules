@@ -94,18 +94,25 @@
     fxtag = 14.1.2
     fxrequired = AlwaysRequired
 
+#[submodule "hemco"]
+#    path = src/hemco
+#    url = https://github.com/ESCOMP/HEMCO_CESM.git
+#    fxtag = hemco-cesm1_2_1_hemco3_6_3_cesm
+#    fxrequired = AlwaysRequired
+#
+#[submodule "HEMCO"]
+#    path = src/hemco/HEMCO
+#    url = https://github.com/geoschem/hemco.git
+#    fxrequired = AlwaysRequired
+#    fxtag = 3.6.3-cesm
+#    fxDONOTUSEurl = https://github.com/geoschem/hemco.git
+
 [submodule "hemco"]
     path = src/hemco
     url = https://github.com/ESCOMP/HEMCO_CESM.git
-    fxtag = hemco-cesm1_2_1_hemco3_6_3_cesm
+    fxtag = hemco-cesm2_2_0_hemco3_10_3
     fxrequired = AlwaysRequired
-
-[submodule "HEMCO"]
-    path = src/hemco/HEMCO
-    url = https://github.com/geoschem/hemco.git
-    fxrequired = AlwaysRequired
-    fxtag = 3.6.3-cesm
-    fxDONOTUSEurl = https://github.com/geoschem/hemco.git
+    fxDONOTUSEurl = https://github.com/ESCOMP/HEMCO_CESM.git
 
 [submodule "rte-rrtmgp"]
     path = src/physics/rrtmgp/ext
