@@ -1,5 +1,7 @@
 # CAM: The Community Atmosphere Model
 
+# CODE VERSION: `cam6_3_158`
+
 ## NOTE: This is **unsupported** development code and is subject to the [CESM developer's agreement](http://www.cgd.ucar.edu/cseg/development-code.html).
 
 ### CAM Documentation - https://ncar.github.io/CAM/doc/build/html/index.html
