@@ -378,6 +378,8 @@ contains
 
     if (masterproc) then
        write(iulog,*) 'trcdata_init: file%has_ps = ' , file%has_ps
+       if (file%geop_alt) write(iulog,*) '          -> file uses geop_alt '
+       if (file%conserve_column) write(iulog,*) '          -> file uses conserve_column'
     endif ! masterproc
 
     if (file%alt_data) then
