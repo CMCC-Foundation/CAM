@@ -27,7 +27,7 @@ module mo_flbc
   private
   public  :: flbc_inti, flbc_set, flbc_chk, has_flbc
   public  :: flbc_gmean_vmr
-  public  :: flbc_get_cfc11eq, flbc_has_cfc11eq
+  public  :: flbc_get_cfc11eq, flbc_has_cfc11eq, flbc_get_co2vmr
 
   save
 
@@ -63,7 +63,7 @@ module mo_flbc
 
 contains
 
-  subroutine flbc_inti( flbc_file, flbc_list, flbc_timing_in, co2vmr, ch4vmr, n2ovmr, f11vmr, f12vmr )
+  subroutine flbc_inti( flbc_file, flbc_list, flbc_timing_in, co2vmr, co2vmr_rad, ch4vmr, n2ovmr, f11vmr, f12vmr )
     !-----------------------------------------------------------------------
     ! 	... initialize the fixed lower bndy cond
     !-----------------------------------------------------------------------
@@ -82,7 +82,7 @@ contains
     character(len=*), intent(in) :: flbc_file
     character(len=*), intent(in) :: flbc_list(:)
     type(time_ramp),  intent(in) :: flbc_timing_in
-    real(r8),         intent(in) :: co2vmr, ch4vmr, n2ovmr, f11vmr, f12vmr
+    real(r8),         intent(in) :: co2vmr, co2vmr_rad, ch4vmr, n2ovmr, f11vmr, f12vmr
 
     !-----------------------------------------------------------------------
     ! 	... local variables
@@ -186,6 +186,9 @@ contains
     ! check that user has not set vmr namelist values...
     if ( ghg_indices(co2_ndx) > 0 .and. co2vmr>1.e-6_r8) then
        call endrun('flbc_inti: cannot specify both co2vmr and CO2 in flbc_file')
+    endif
+    if ( ghg_indices(co2_ndx) > 0 .and. co2vmr_rad>0._r8) then
+       call endrun('flbc_inti: cannot specify both co2vmr_rad and CO2 in flbc_file')
     endif
     if ( ghg_indices(ch4_ndx) > 0 .and. ch4vmr > 0._r8) then
        call endrun('flbc_inti: cannot specify both ch4vmr and CH4 in flbc_file')
@@ -668,6 +671,40 @@ contains
     end do
 
   end subroutine flbc_set
+
+  subroutine flbc_get_co2vmr( lbc_vmr, ncol, lchnk, rmwco2_in )
+
+    !--------------------------------------------------------
+    ! return the lower of co2 vmr
+    !--------------------------------------------------------
+
+    !--------------------------------------------------------
+    ! dummy arguments
+    !--------------------------------------------------------
+    integer,  intent(in)  ::   ncol
+    integer,  intent(in)  ::   lchnk
+    real(r8), intent(out) ::   lbc_vmr(:)    ! lower bndy concentrations( mol/mol )
+    real(r8), intent(in), optional :: rmwco2_in ! = mwco2/mwdry ! ratio of molecular weights of co2 to dry air to convert to mmr
+
+    !--------------------------------------------------------
+    !   ... local variables
+    !--------------------------------------------------------
+    integer  :: m, last, next
+    real(r8) :: dels
+
+    lbc_vmr(:) = 0._r8
+
+    m = ghg_indices(co2_ndx)
+
+    if (flbcs(m)%spc_ndx > 0) then
+       call get_dels( dels, last, next )
+       lbc_vmr(:ncol) = flbcs(m)%vmr(:ncol,lchnk,last) &
+            + dels * (flbcs(m)%vmr(:ncol,lchnk,next) - flbcs(m)%vmr(:ncol,lchnk,last))
+       ! convert to MMR value 
+       if (present(rmwco2_in)) lbc_vmr(:ncol) = lbc_vmr(:ncol) * rmwco2_in
+    endif
+
+  end subroutine flbc_get_co2vmr
 
   subroutine flbc_get_cfc11eq( lbc_vmr, ncol, lchnk )
 

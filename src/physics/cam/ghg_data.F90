@@ -16,6 +16,7 @@ use ppgrid,         only: pcols, pver, begchunk, endchunk
 use physics_types,  only: physics_state
 use physconst,      only: mwdry, mwch4, mwn2o, mwf11, mwf12, mwco2
 use chem_surfvals,  only: chem_surfvals_get, chem_surfvals_co2_rad
+use mo_flbc,        only: flbc_get_co2vmr
 use cam_abortutils, only: endrun
 use error_messages, only: handle_err
 
@@ -91,7 +92,7 @@ subroutine ghg_data_timestep_init(pbuf2d, state)
        pbuf_chnk => pbuf_get_chunk(pbuf2d, lchnk)
        call pbuf_get_field(pbuf_chnk, pbuf_idx(iconst), tmpptr) 
        call trcmix(cnst_names(iconst), state(lchnk)%ncol, &
-                   state(lchnk)%lat, state(lchnk)%pmid, &
+                   state(lchnk)%lat, state(lchnk)%pmid, lchnk, &
                    tmpptr)
      enddo
   enddo
@@ -101,7 +102,7 @@ end subroutine ghg_data_timestep_init
 
 !================================================================================================
 
-subroutine trcmix(name, ncol, clat, pmid, q)
+subroutine trcmix(name, ncol, clat, pmid, lchnk, q)
 !----------------------------------------------------------------------- 
 ! 
 ! Purpose: 
@@ -128,6 +129,7 @@ subroutine trcmix(name, ncol, clat, pmid, q)
 
    integer i                ! longitude loop index
    integer k                ! level index
+   integer lchnk            ! memory buffer chunck
 
    real(r8) coslat(pcols)   ! cosine of latitude
    real(r8) dlat            ! latitude in degrees
@@ -146,9 +148,11 @@ subroutine trcmix(name, ncol, clat, pmid, q)
       q = chem_surfvals_get('O2MMR')
 
    else if (name == 'CO2') then
-
-      q = chem_surfvals_co2_rad()
-
+      ! always expressed as MMR
+      q = chem_surfvals_co2_rad() 
+      ! the check if CO2 is available from LBC is done in the subroutine
+      call flbc_get_co2vmr(q(:ncol,pver), ncol, lchnk, rmwco2)
+ 
    else if (name == 'CH4') then
 
       ! set tropospheric mass mixing ratios

@@ -326,7 +326,7 @@ subroutine chem_surfvals_init()
 
    else if (scenario_ghg == 'CHEM_LBC_FILE') then
       ! set by lower boundary conditions file
-      call flbc_inti( flbc_file, flbc_list, flbc_timing, co2vmr, ch4vmr, n2ovmr, f11vmr, f12vmr )
+      call flbc_inti( flbc_file, flbc_list, flbc_timing, co2vmr, co2vmr_rad, ch4vmr, n2ovmr, f11vmr, f12vmr )
       call chem_surfvals_set()
 
    endif

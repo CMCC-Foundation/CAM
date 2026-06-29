@@ -12,6 +12,7 @@ module camsrfexch
   use infnan,          only: posinf, assignment(=)
   use cam_abortutils,  only: endrun
   use cam_logfile,     only: iulog
+  use spmd_utils,      only : masterproc
   use srf_field_check, only: active_Sl_ram1, active_Sl_fv, active_Sl_soilw,                &
                              active_Fall_flxdst1, active_Fall_flxvoc, active_Fall_flxfire, &
                              active_Faxa_nhx, active_Faxa_noy
@@ -430,6 +431,9 @@ subroutine cam_export(state,cam_out,pbuf)
    integer :: prec_dp_idx, snow_dp_idx, prec_sh_idx, snow_sh_idx
    integer :: prec_sed_idx,snow_sed_idx,prec_pcw_idx,snow_pcw_idx
    integer :: srf_ozone_idx, lightning_idx
+   integer :: co2_mmr_idx
+
+   real(r8) :: co2_mmr_to_vmr                      ! co2 conversion from mmr to vmr
 
    real(r8), pointer :: psl(:)
 
@@ -443,6 +447,7 @@ subroutine cam_export(state,cam_out,pbuf)
    real(r8), pointer :: snow_pcw(:)                ! snow from Hack   convection
    real(r8), pointer :: o3_ptr(:,:), srf_o3_ptr(:)
    real(r8), pointer :: lightning_ptr(:)
+   real(r8), pointer :: co2_mmr(:,:)               ! co2 concentration expressed as mmr
    !-----------------------------------------------------------------------
 
    lchnk = state%lchnk
@@ -461,6 +466,7 @@ subroutine cam_export(state,cam_out,pbuf)
    snow_pcw_idx = pbuf_get_index('SNOW_PCW', errcode=i)
    srf_ozone_idx = pbuf_get_index('SRFOZONE', errcode=i)
    lightning_idx = pbuf_get_index('LGHT_FLASH_FREQ', errcode=i)
+   co2_mmr_idx = pbuf_get_index('CO2', errcode=i)
 
    if (prec_dp_idx > 0) then
      call pbuf_get_field(pbuf, prec_dp_idx, prec_dp)
@@ -486,6 +492,9 @@ subroutine cam_export(state,cam_out,pbuf)
    if (snow_pcw_idx > 0) then
      call pbuf_get_field(pbuf, snow_pcw_idx, snow_pcw)
    end if
+   if (co2_mmr_idx > 0) then
+     call pbuf_get_field(pbuf, co2_mmr_idx, co2_mmr)
+   end if
 
    do i=1,ncol
       cam_out%tbot(i)  = state%t(i,pver)
@@ -504,12 +513,19 @@ subroutine cam_export(state,cam_out,pbuf)
      end do
    end do
 
-   cam_out%co2diag(:ncol) = chem_surfvals_get('CO2VMR') * 1.0e+6_r8
+   !cam_out%co2diag(:ncol) = chem_surfvals_get('CO2VMR') * 1.0e+6_r8
+   !if (masterproc) write(iulog,*) 'camsrfexch: chem_surfvals_get  ', cam_out%co2diag(:ncol)
+   co2_mmr_to_vmr = 1.0e+6_r8 *mwdry/mwco2
    if (co2_transport()) then
       do i=1,ncol
-         cam_out%co2prog(i) = state%q(i,pver,c_i(4)) * 1.0e+6_r8 *mwdry/mwco2
+         cam_out%co2prog(i) = state%q(i,pver,c_i(4)) * co2_mmr_to_vmr
+      end do
+   else
+      do i=1,ncol
+         cam_out%co2diag(i) = co2_mmr(i,pver) * co2_mmr_to_vmr
       end do
    end if
+   !if (masterproc) write(iulog,*) 'camsrfexch: pbuf  ', cam_out%co2diag(:ncol)
 
    ! get bottom layer ozone concentrations to export to surface models
    if (srf_ozone_idx > 0) then
