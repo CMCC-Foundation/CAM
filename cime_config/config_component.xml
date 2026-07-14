@@ -341,6 +341,7 @@
       <value compset="_CAM60%WCTS%1PCT"> flbc_cycle_yr=-1 </value>
       <value compset="_CAM60%WCTS%1PCT"> flbc_file='$DIN_LOC_ROOT/atm/waccm/lb/LBC_CMIP6_1pctCO2ramp_y1-165_0p5degLat_c180930.nc'</value>
       <value compset="_CAM60%WCTS%1PCT"> nlte_limit_co2=.true.</value>
+      <value compset="_BGC%BPRP"> co2_cycle_rad_passive=.false. </value>
       <value compset="_BGC%BDRD"> co2_cycle_rad_passive=.true. </value>
       <!-- hemco (harmonized emissions component) option -->
       <value compset="_CAM.*%HEMCO"> use_hemco=.true. </value>
