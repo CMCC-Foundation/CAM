@@ -14,6 +14,8 @@ module co2_cycle
    use shr_kind_mod,    only: r8 => shr_kind_r8, cl => shr_kind_cl
    use co2_data_flux,   only: co2_data_flux_type
    use srf_field_check, only: active_Faoo_fco2_ocn
+   use spmd_utils,      only: masterproc
+   use cam_logfile,     only: iulog
 
    implicit none
 
@@ -83,14 +85,17 @@ subroutine co2_cycle_readnl(nlfile)
    use spmd_utils,      only: mpicom, mstrid=>masterprocid, mpi_logical, mpi_character
    use cam_logfile,     only: iulog
    use cam_abortutils,  only: endrun
+   use chem_surfvals,   only: flbc_list
+   use constituents,    only: pcnst
 
    ! Arguments
    character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input
 
    ! Local variables
-   integer :: unitn, ierr
+   integer :: unitn, ierr, m, n
    character(len=256) :: msg
    character(len=*), parameter :: subname = 'co2_cycle_readnl'
+   character(len=16)  :: flbc_list_wrk(pcnst) = ''
 
    namelist /co2_cycle_nl/ co2_flag, co2_readFlux_ocn, co2_readFlux_fuel, co2_readFlux_aircraft, &
                            co2flux_ocn_file, co2flux_fuel_file
@@ -132,6 +137,19 @@ subroutine co2_cycle_readnl(nlfile)
       call endrun(trim(msg))
    end if
 
+   ! remove co2 if listed in flbc_list
+   flbc_list_wrk(:) = flbc_list(:)
+   flbc_list(:) = ''
+   n = 0
+   do m = 1, size(flbc_list_wrk)
+      if (trim(flbc_list_wrk(m)) == 'CO2') then
+          if (masterproc) write(iulog,*) 'co2_cycle_readnl: remove CO2 from flbc_list active forcing'
+      else
+          n = n + 1
+          flbc_list(n) = flbc_list_wrk(m)
+      end if
+   end do
+
 end subroutine co2_cycle_readnl
 
 !===============================================================================
@@ -172,10 +190,10 @@ subroutine co2_register
    local_co2 = .false.
    do i = 1, ncnst
 
-      call cnst_get_ind(c_names(i), c_i(i), abort=.false.)
+      call cnst_get_ind(trim(c_names(i)), c_i(i), abort=.false.)
       if (c_i(i) < 0) then
-         call cnst_add(c_names(i), c_mw(i), c_cp(i), c_qmin(i), &
-              c_i(i), longname=c_names(i), mixtype='dry')
+         call cnst_add(trim(c_names(i)), c_mw(i), c_cp(i), c_qmin(i), &
+              c_i(i), longname=trim(c_names(i)), mixtype='dry')
          if (trim(c_names(i)) == 'CO2') then
             local_co2 = .true.
          end if
@@ -238,7 +256,7 @@ function co2_implements_cnst(name)
    if (.not. co2_flag) return
 
    do m = 1, ncnst
-      if (name == c_names(m)) then
+      if (trim(name) == trim(c_names(m))) then
             if ((trim(name) /= 'CO2') .or. local_co2) then
                co2_implements_cnst = .true.
             end if
@@ -307,7 +325,7 @@ subroutine co2_init
 ! Purpose: initialize co2,
 !          declare history variables,
 !          read co2 flux form ocn,  as data_flux_ocn
-!          read co2 flux form fule, as data_flux_fuel
+!          read co2 flux form fuel, as data_flux_fuel
 !-------------------------------------------------------------------------------
 
    use cam_history,    only: addfld, add_default, horiz_only
@@ -327,13 +345,17 @@ subroutine co2_init
       mm = c_i(m)
 
       call addfld(trim(cnst_name(mm))//'_BOT', horiz_only,  'A', 'kg/kg',   trim(cnst_longname(mm))//', Bottom Layer')
-      if (co2_implements_cnst(cnst_name(mm))) then
-         call addfld(cnst_name(mm),               (/ 'lev' /), 'A', 'kg/kg',   cnst_longname(mm))
-         call addfld(sflxnam(mm),                 horiz_only,  'A', 'kg/m2/s', trim(cnst_name(mm))//' surface flux')
+      if (co2_implements_cnst(trim(cnst_name(mm)))) then
+         call addfld(trim(cnst_name(mm)),   (/ 'lev' /), 'A', 'kg/kg',   trim(cnst_longname(mm)))
+         call addfld(trim(sflxnam(mm)),     horiz_only,  'A', 'kg/m2/s', trim(cnst_name(mm))//' surface flux')
+      else
+         if (trim(cnst_name(mm)) == 'CO2') then
+            call addfld(trim(sflxnam(mm)),     horiz_only,  'A', 'kg/m2/s', trim(cnst_name(mm))//' surface flux')
+         end if
       end if
 
-      call add_default(cnst_name(mm), 1, ' ')
-      call add_default(sflxnam(mm),   1, ' ')
+      call add_default(trim(cnst_name(mm)), 1, ' ')
+      call add_default(trim(sflxnam(mm)),   1, ' ')
 
       ! The addfld call for the 'TM*' fields are made by default in the
       ! constituent_burden module.
