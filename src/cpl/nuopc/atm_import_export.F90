@@ -98,6 +98,7 @@ contains
   ! advertise fields
   !-----------------------------------------------------------
   subroutine advertise_fields(gcomp, flds_scalar_name, rc)
+    use co2_cycle         , only : co2_readFlux_ocn
 
     ! input/output variables
     type(ESMF_GridComp)            :: gcomp
@@ -264,6 +265,10 @@ contains
        call set_active_Fall_fco2_lnd(.true.)
     end if
     if (flds_co2c) then
+       ! Consistency check
+       if (co2_readFlux_ocn) then
+          call shr_sys_abort(subname // ':: co2_readFlux_ocn and x2a_Faoo_fco2_ocn cannot both be active')
+       end if
        call fldlist_add(fldsToAtm_num, fldsToAtm, 'Faoo_fco2_ocn')
        call set_active_Faoo_fco2_ocn(.true.)
     end if
@@ -815,11 +820,6 @@ contains
              g = g + 1
           end do
        end do
-    else
-       ! Consistency check
-       if (co2_readFlux_ocn) then
-          call shr_sys_abort(subname // ':: co2_readFlux_ocn and x2a_Faoo_fco2_ocn cannot both be active')
-       end if
     end if
     call state_getfldptr(importState,  'Faoo_dms_ocn', fldptr=fldptr1d, exists=exists, rc=rc)
     if (exists) then
