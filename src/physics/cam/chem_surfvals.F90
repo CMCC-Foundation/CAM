@@ -223,11 +223,6 @@ subroutine chem_surfvals_readnl(nlfile)
             write(iulog,*) '    flbc_fixed_ymd = ', flbc_fixed_ymd
             write(iulog,*) '    flbc_fixed_tod = ', flbc_fixed_tod
          end if
-         write(iulog,*) '  Species from LBC file:'
-         do i = 1, pcnst
-            if (flbc_list(i) == ' ') exit
-            write(iulog,*) '    '//trim(flbc_list(i))
-         end do
 
       else
          call endrun (sub//': scenario_ghg must be set to either FIXED, RAMPED, RAMP_CO2_ONLY, &

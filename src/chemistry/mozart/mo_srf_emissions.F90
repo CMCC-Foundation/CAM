@@ -3,7 +3,7 @@ module mo_srf_emissions
   ! 	... surface emissions module
   !---------------------------------------------------------------
 
-  use shr_kind_mod,  only : r8 => shr_kind_r8
+  use shr_kind_mod,  only : r8 => shr_kind_r8, shr_kind_cs, shr_kind_cl
   use chem_mods,     only : gas_pcnst
   use spmd_utils,    only : masterproc
   use cam_abortutils,only : endrun
@@ -17,11 +17,11 @@ module mo_srf_emissions
      integer           :: spc_ndx
      real(r8)          :: mw
      real(r8)          :: scalefactor
-     character(len=256):: filename
+     character(len=shr_kind_cl):: filename
      character(len=16) :: species
      character(len=8)  :: units
      integer                   :: nsectors
-     character(len=32),pointer :: sectors(:)
+     character(len=shr_kind_cl),pointer :: sectors(:)
      type(trfld), pointer      :: fields(:)
      type(trfile)              :: file
   end type emission
@@ -74,10 +74,10 @@ contains
     integer  :: astat
     integer  :: j, l, m, n, i, nn                     ! Indices
     character(len=16)  :: spc_name
-    character(len=256) :: filename
+    character(len=shr_kind_cl) :: filename
 
     character(len=16)  :: emis_species(size(srf_emis_specifier))
-    character(len=256) :: emis_filenam(size(srf_emis_specifier))
+    character(len=shr_kind_cl) :: emis_filenam(size(srf_emis_specifier))
     integer  :: emis_indexes(size(srf_emis_specifier))
     integer  :: indx(size(srf_emis_specifier))
     real(r8) :: emis_scalefactor(size(srf_emis_specifier))
@@ -86,16 +86,16 @@ contains
     integer :: vndims
     logical, allocatable :: is_sector(:)
     type(file_desc_t) :: ncid
-    character(len=32)  :: varname
-    character(len=256) :: locfn
+    character(len=shr_kind_cs) :: varname
+    character(len=shr_kind_cl) :: locfn
     integer :: ierr
     character(len=1), parameter :: filelist = ''
     character(len=1), parameter :: datapath = ''
     logical         , parameter :: rmv_file = .false.
     logical :: unstructured
     character(len=32) :: emis_type = ' '
-    character(len=80) :: file_interp_type = ' '
-    character(len=256) :: tmp_string = ' '
+    character(len=shr_kind_cs) :: file_interp_type = ' '
+    character(len=shr_kind_cl) :: tmp_string = ' '
     character(len=32) :: xchr = ' '
     real(r8) :: xdbl
     integer :: time_dimid, ncol_dimid

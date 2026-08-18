@@ -14,6 +14,8 @@ module co2_cycle
    use shr_kind_mod,    only: r8 => shr_kind_r8, cl => shr_kind_cl
    use co2_data_flux,   only: co2_data_flux_type
    use srf_field_check, only: active_Faoo_fco2_ocn
+   use spmd_utils,      only: masterproc
+   use cam_logfile,     only: iulog
 
    implicit none
 
@@ -62,6 +64,8 @@ module co2_cycle
    integer :: co2_fff_glo_ind ! global index of 'CO2_FFF'
    integer :: co2_lnd_glo_ind ! global index of 'CO2_LND'
    integer :: co2_glo_ind     ! global index of 'CO2'
+   integer :: idx_ac_CO2 = -1      ! pbuf index of aircraft CO2 field
+   logical :: local_co2 = .false.  ! .true. if CO2 const. added in this module
 
    integer, dimension(ncnst) :: c_i                   ! global index
 
@@ -81,14 +85,17 @@ subroutine co2_cycle_readnl(nlfile)
    use spmd_utils,      only: mpicom, mstrid=>masterprocid, mpi_logical, mpi_character
    use cam_logfile,     only: iulog
    use cam_abortutils,  only: endrun
+   use chem_surfvals,   only: flbc_list
+   use constituents,    only: pcnst
 
    ! Arguments
    character(len=*), intent(in) :: nlfile  ! filepath for file containing namelist input
 
    ! Local variables
-   integer :: unitn, ierr
+   integer :: unitn, ierr, m, n
    character(len=256) :: msg
    character(len=*), parameter :: subname = 'co2_cycle_readnl'
+   character(len=16)  :: flbc_list_wrk(pcnst) = ''
 
    namelist /co2_cycle_nl/ co2_flag, co2_readFlux_ocn, co2_readFlux_fuel, co2_readFlux_aircraft, &
                            co2flux_ocn_file, co2flux_fuel_file
@@ -130,6 +137,19 @@ subroutine co2_cycle_readnl(nlfile)
       call endrun(trim(msg))
    end if
 
+   ! remove co2 if listed in flbc_list
+   flbc_list_wrk(:) = flbc_list(:)
+   flbc_list(:) = ''
+   n = 0
+   do m = 1, size(flbc_list_wrk)
+      if (trim(flbc_list_wrk(m)) == 'CO2') then
+          if (masterproc) write(iulog,*) 'co2_cycle_readnl: remove CO2 from flbc_list active forcing'
+      else
+          n = n + 1
+          flbc_list(n) = flbc_list_wrk(m)
+      end if
+   end do
+
 end subroutine co2_cycle_readnl
 
 !===============================================================================
@@ -141,7 +161,8 @@ subroutine co2_register
 !-------------------------------------------------------------------------------
 
    use physconst,      only: mwco2, cpair
-   use constituents,   only: cnst_add
+   use constituents,   only: cnst_get_ind, cnst_add
+   use cam_abortutils, only: endrun
 
    ! Local variables
    real(r8), dimension(ncnst) :: &       
@@ -159,10 +180,26 @@ subroutine co2_register
    c_cp   = (/     cpair,     cpair,     cpair,     cpair /)
    c_qmin = (/ 1.e-20_r8, 1.e-20_r8, 1.e-20_r8, 1.e-20_r8 /)
 
-   ! register CO2 constiuents as dry tracers, set indices
-
+   ! register any new CO2 constiuents as dry tracers, set indices
+   ! This logic prevents duplicate CO2 tracers from being created.
+   ! If a CO2 tracer already exists do not attempt register one and local_co2
+   !   is set to .false. so that other code below (addfld calls,
+   !   co2_implements_cnst) does not do anything with that consitituent.
+   ! local_co2 = .true. means that the CO2 constituent was created by
+   !   and is manged by this module.
+   local_co2 = .false.
    do i = 1, ncnst
-      call cnst_add(c_names(i), c_mw(i), c_cp(i), c_qmin(i), c_i(i), longname=c_names(i), mixtype='dry')
+
+      call cnst_get_ind(trim(c_names(i)), c_i(i), abort=.false.)
+      if (c_i(i) < 0) then
+         call cnst_add(trim(c_names(i)), c_mw(i), c_cp(i), c_qmin(i), &
+              c_i(i), longname=trim(c_names(i)), mixtype='dry')
+         if (trim(c_names(i)) == 'CO2') then
+            local_co2 = .true.
+         end if
+      else if (trim(c_names(i)) /= 'CO2') then
+         call endrun('co2_register: '//trim(c_names(i))//' already defined')
+      end if
 
       select case (trim(c_names(i)))
       case ('CO2_OCN')
@@ -219,8 +256,11 @@ function co2_implements_cnst(name)
    if (.not. co2_flag) return
 
    do m = 1, ncnst
-      if (name == c_names(m)) then
-         co2_implements_cnst = .true.
+      if (trim(name) == trim(c_names(m))) then
+            if ((trim(name) /= 'CO2') .or. local_co2) then
+               co2_implements_cnst = .true.
+            end if
+            return
          return
       end if
    end do
@@ -285,12 +325,13 @@ subroutine co2_init
 ! Purpose: initialize co2,
 !          declare history variables,
 !          read co2 flux form ocn,  as data_flux_ocn
-!          read co2 flux form fule, as data_flux_fuel
+!          read co2 flux form fuel, as data_flux_fuel
 !-------------------------------------------------------------------------------
 
    use cam_history,    only: addfld, add_default, horiz_only
    use co2_data_flux,  only: co2_data_flux_init
    use constituents,   only: cnst_name, cnst_longname, sflxnam
+   use physics_buffer, only: pbuf_get_index
 
    ! Local variables
    integer :: m, mm
@@ -304,11 +345,17 @@ subroutine co2_init
       mm = c_i(m)
 
       call addfld(trim(cnst_name(mm))//'_BOT', horiz_only,  'A', 'kg/kg',   trim(cnst_longname(mm))//', Bottom Layer')
-      call addfld(cnst_name(mm),               (/ 'lev' /), 'A', 'kg/kg',   cnst_longname(mm))
-      call addfld(sflxnam(mm),                 horiz_only,  'A', 'kg/m2/s', trim(cnst_name(mm))//' surface flux')
+      if (co2_implements_cnst(trim(cnst_name(mm)))) then
+         call addfld(trim(cnst_name(mm)),   (/ 'lev' /), 'A', 'kg/kg',   trim(cnst_longname(mm)))
+         call addfld(trim(sflxnam(mm)),     horiz_only,  'A', 'kg/m2/s', trim(cnst_name(mm))//' surface flux')
+      else
+         if (trim(cnst_name(mm)) == 'CO2') then
+            call addfld(trim(sflxnam(mm)),     horiz_only,  'A', 'kg/m2/s', trim(cnst_name(mm))//' surface flux')
+         end if
+      end if
 
-      call add_default(cnst_name(mm), 1, ' ')
-      call add_default(sflxnam(mm),   1, ' ')
+      call add_default(trim(cnst_name(mm)), 1, ' ')
+      call add_default(trim(sflxnam(mm)),   1, ' ')
 
       ! The addfld call for the 'TM*' fields are made by default in the
       ! constituent_burden module.
@@ -323,6 +370,10 @@ subroutine co2_init
    if (co2_readFlux_fuel) then
       call co2_data_flux_init ( co2flux_fuel_file, 'CO2_flux', data_flux_fuel )
    end if
+
+   ! Find and store the aircraft CO2 index
+   ! We can ignore the error code, idx_ac_CO2 is unchanged on error
+   idx_ac_CO2 = pbuf_get_index('ac_CO2', errcode=mm)
 
 end subroutine co2_init
 
@@ -380,7 +431,7 @@ subroutine co2_cycle_set_ptend(state, pbuf, ptend)
 !-------------------------------------------------------------------------------
 
    use physics_types,  only: physics_state, physics_ptend, physics_ptend_init
-   use physics_buffer, only: physics_buffer_desc, pbuf_get_index, pbuf_get_field
+   use physics_buffer, only: physics_buffer_desc, pbuf_get_field
    use constituents,   only: pcnst
    use ppgrid,         only: pver
    use physconst,      only: gravit
@@ -409,16 +460,17 @@ subroutine co2_cycle_set_ptend(state, pbuf, ptend)
 
    call physics_ptend_init(ptend, state%psetcols, 'co2_cycle_ac', lq=lq)
 
-   ifld = pbuf_get_index('ac_CO2')
-   call pbuf_get_field(pbuf, ifld, ac_CO2)
+   if (idx_ac_CO2 > 0) then
+      call pbuf_get_field(pbuf, idx_ac_CO2, ac_CO2)
 
-   ! [ac_CO2] = 'kg m-2 s-1'
-   ! [ptend%q] = 'kg kg-1 s-1'
-   ncol = state%ncol
-   do k = 1, pver
-      ptend%q(:ncol,k,co2_fff_glo_ind) = gravit * state%rpdeldry(:ncol,k) * ac_CO2(:ncol,k)
-      ptend%q(:ncol,k,co2_glo_ind)     = gravit * state%rpdeldry(:ncol,k) * ac_CO2(:ncol,k)
-   end do
+      ! [ac_CO2] = 'kg m-2 s-1'
+      ! [ptend%q] = 'kg kg-1 s-1'
+      ncol = state%ncol
+      do k = 1, pver
+         ptend%q(:ncol,k,co2_fff_glo_ind) = gravit * state%rpdeldry(:ncol,k) * ac_CO2(:ncol,k)
+         ptend%q(:ncol,k,co2_glo_ind)     = gravit * state%rpdeldry(:ncol,k) * ac_CO2(:ncol,k)
+      end do
+   end if
 
 end subroutine co2_cycle_set_ptend
 

@@ -8,7 +8,7 @@ module tracer_data
 !-----------------------------------------------------------------------
 
   use perf_mod,         only : t_startf, t_stopf
-  use shr_kind_mod,     only : r8 => shr_kind_r8, shr_kind_cl
+  use shr_kind_mod,     only : r8 => shr_kind_r8, shr_kind_cl, shr_kind_cs
   use time_manager,     only : get_curr_date, get_step_size
   use spmd_utils,       only : masterproc
   use ppgrid,           only : pcols, pver, pverp, begchunk, endchunk
@@ -56,9 +56,9 @@ module tracer_data
   type trfld
      real(r8), dimension(:,:,:), pointer :: data => null()
      type(input3d), dimension(4) :: input
-     character(len=32) :: srcnam
-     character(len=32) :: fldnam
-     character(len=32) :: units
+     character(len=shr_kind_cs) :: srcnam
+     character(len=shr_kind_cs) :: fldnam
+     character(len=shr_kind_cs) :: units
      type(var_desc_t) :: var_id
      integer :: coords(4) ! LATDIM | LONDIM | LEVDIM | TIMDIM
      integer :: order(4) ! LATDIM | LONDIM | LEVDIM | TIMDIM
@@ -198,7 +198,7 @@ contains
     integer :: i1,i2,j1,j2
     integer :: nvardims, vardimids(4)
 
-    character(len=256) :: data_units
+    character(len=shr_kind_cl) :: data_units
     real(r8), allocatable :: lam(:), phi(:)
     real(r8):: rlats(pcols), rlons(pcols)
     integer :: lchnk, ncol, icol, i,j
@@ -580,7 +580,7 @@ contains
        endif
 
        ierr = pio_get_att( file%curr_fileid, flds(f)%var_id, 'units', data_units)
-       flds(f)%units = trim(data_units(1:32))
+       flds(f)%units = trim(data_units(1:shr_kind_cs))
 
     enddo flds_loop
 
@@ -2211,7 +2211,7 @@ contains
     integer :: fld_cnt, astat
     integer :: i,j
     character(len=shr_kind_cl) :: str1, str2
-    character(len=32), allocatable, dimension(:) :: fld_name,  src_name
+    character(len=shr_kind_cs), allocatable, dimension(:) :: fld_name,  src_name
     integer :: nflds
 
     nflds = size(specifier)
@@ -2278,7 +2278,7 @@ contains
     type(file_desc_t), intent(inout) :: piofile
     type(trfile), intent(inout) :: tr_file
 
-    character(len=32) :: name
+    character(len=shr_kind_cs) :: name
     integer :: ioerr, mcdimid, maxlen
     integer :: err_handling
 
@@ -2346,7 +2346,7 @@ contains
     type(file_desc_t), intent(inout) :: piofile
     type(trfile), intent(inout) :: tr_file
     type(var_desc_t) :: vdesc
-    character(len=64) :: name
+    character(len=shr_kind_cs) :: name
     integer :: ioerr   ! error status
     integer :: slen
     integer :: err_handling
