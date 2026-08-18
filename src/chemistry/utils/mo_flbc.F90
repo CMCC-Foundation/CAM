@@ -181,6 +181,9 @@ contains
           flbc_has_cfc11eq = .true.
        endif
 
+       if(masterproc) then
+          write(iulog,*) 'flbc_inti: ',m,n,has_flbc(n),flbcs(flbc_cnt)%species,ghg_names(m)
+       end if
     enddo
 
     ! check that user has not set vmr namelist values...
@@ -781,12 +784,12 @@ contains
           end if
        end do
        if( n > ntimes ) then
-          write(iulog,*) 'flbc_set: interp time is out of bounds'
+          write(iulog,*) 'flbc_dels: interp time is out of bounds'
           call endrun
        end if
        dels = (wrk_time - times(last))/(times(next) - times(last))
        !        write(iulog,*) ' '
-       !        write(iulog,*) 'flbc_set: last,next,dels,ncdate,ncsec = ',last,next,dels,ncdate,ncsec
+       !        write(iulog,*) 'flbc_dels: last,next,dels,ncdate,ncsec = ',last,next,dels,ncdate,ncsec
     else
        tcnt = tim_ndx(2) - tim_ndx(1) + 1
        call findplb( times(tim_ndx(1)), tcnt, wrk_time, n )
@@ -804,7 +807,7 @@ contains
           dels = dels/(365._r8 + times(next) - times(last))
        end if
        !        write(iulog,*) ' '
-       !        write(iulog,*) 'flbc_set: last,next,dels,ncdate,ncsec = ',last,next,dels,ncdate,ncsec
+       !        write(iulog,*) 'flbc_dels: last,next,dels,ncdate,ncsec = ',last,next,dels,ncdate,ncsec
     end if
 
     dels = max( min( 1._r8,dels ),0._r8 )
