@@ -571,6 +571,11 @@ contains
        call shr_sys_abort( subname//' ERROR: unknown start_type' )
     end if
 
+    if (masterproc) then
+        write(iulog,*) subname, 'start type configuration:'
+        write(iulog,*) ' initial=', initial_run, ' restart=',restart_run, ' branch=',branch_run
+    end if
+
     ! DART always starts up as an initial run.
     call NUOPC_CompAttributeGet(gcomp, name='data_assimilation_atm', value=cvalue, &
          isPresent=isPresent, isSet=isSet, rc=rc)
