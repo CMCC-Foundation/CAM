@@ -129,6 +129,8 @@ subroutine co2_cycle_readnl(nlfile)
    call mpi_bcast(co2flux_fuel_file, len(co2flux_fuel_file),   mpi_character, mstrid, mpicom, ierr)
    if (ierr /= 0) call endrun(subname//": FATAL: mpi_bcast: co2flux_fuel_file")
 
+   if (.not. co2_flag) return
+
    ! Consistency check
    if (co2_readFlux_ocn .and. active_Faoo_fco2_ocn) then
       msg = subname//': ERROR: reading ocn flux dataset is enabled, but coupler is setting'&
