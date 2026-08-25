@@ -181,9 +181,6 @@ contains
           flbc_has_cfc11eq = .true.
        endif
 
-       if(masterproc) then
-          write(iulog,*) 'flbc_inti: ',m,n,has_flbc(n),flbcs(flbc_cnt)%species,ghg_names(m)
-       end if
     enddo
 
     ! check that user has not set vmr namelist values...
