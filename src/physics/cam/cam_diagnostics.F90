@@ -568,6 +568,11 @@ contains
     call addfld ('UGUST',    horiz_only, 'A', 'm/s','Gustiness term added to U10')
     call addfld ('U10WITHGUSTS',horiz_only, 'A', 'm/s','10m wind speed with gustiness added')
     call addfld ('RHREFHT',  horiz_only, 'A', 'fraction','Reference height relative humidity')
+    call addfld ('RHREFHTMN',  horiz_only, 'M', 'fraction','Minimum reference height relative humidity')
+    call addfld ('RHREFHTMX',  horiz_only, 'X', 'fraction','Maximum reference height relative humidity')
+    call addfld ('RHCFMIPHT',horiz_only, 'A', 'fraction','Reference height relative humidity with respect to water above 273 K, ice below 273 K')
+    call addfld ('RHCFMIPHTMN',horiz_only, 'M', 'fraction','Minimum reference height relative humidity with respect to water above 273 K, ice below 273 K')
+    call addfld ('RHCFMIPHTMX',horiz_only, 'X', 'fraction','Maximum reference height relative humidity with respect to water above 273 K, ice below 273 K')
 
     call addfld ('LANDFRAC', horiz_only, 'A', 'fraction','Fraction of sfc area covered by land')
     call addfld ('ICEFRAC',  horiz_only, 'A', 'fraction','Fraction of sfc area covered by sea-ice')
@@ -1603,29 +1608,30 @@ contains
       call outfld ('RHW  ',ftem    ,pcols   ,lchnk     )
 
       ! Convert to RHI (ice)
-      do k=1,pver
-         call svp_ice_vect(state%t(1:ncol,k), esi(1:ncol,k), ncol)
-         do i=1,ncol
-            ftem1(i,k)=ftem(i,k)*esl(i,k)/esi(i,k)
+      if (hist_fld_active('RHI') .or. hist_fld_active('RHCFMIP') ) then
+         do k=1,pver
+            call svp_ice_vect(state%t(1:ncol,k), esi(1:ncol,k), ncol)
+            do i=1,ncol
+               ftem1(i,k)=ftem(i,k)*esl(i,k)/esi(i,k)
+            end do
          end do
-      end do
-      call outfld ('RHI  ',ftem1    ,pcols   ,lchnk     )
+         call outfld ('RHI  ',ftem1    ,pcols   ,lchnk     )
+      end if
 
       ! use temperature to decide if you populate with ftem (liquid, above 0 C) or ftem1 (ice, below 0 C)
-
-      ftem2(:ncol,:)=ftem(:ncol,:)
-
-      do i=1,ncol
-        do k=1,pver
-          if (state%t(i,k) .gt. 273) then
-            ftem2(i,k)=ftem(i,k)  !!wrt water
-          else
-            ftem2(i,k)=ftem1(i,k) !!wrt ice
-          end if
-        end do
-      end do
-
-      call outfld ('RHCFMIP  ',ftem2    ,pcols   ,lchnk     )
+      if (hist_fld_active('RHCFMIP')) then
+         ftem2(:ncol,:)=ftem(:ncol,:)
+         do i=1,ncol
+           do k=1,pver
+             if (state%t(i,k) .gt. 273) then
+               ftem2(i,k)=ftem(i,k)  !!wrt water
+             else
+               ftem2(i,k)=ftem1(i,k) !!wrt ice
+             end if
+           end do
+         end do
+         call outfld ('RHCFMIP  ',ftem2    ,pcols   ,lchnk     )
+      end if
 
     end if
     !
@@ -2053,8 +2059,11 @@ if (hist_fld_active('Q030')) then
     integer :: i, k, m      ! indexes
     integer :: lchnk        ! chunk identifier
     integer :: ncol         ! longitude dimension
-    real(r8) tem2(pcols)    ! temporary workspace
-    real(r8) ftem(pcols)    ! temporary workspace
+    real(r8) :: tem1(pcols) ! temporary workspace
+    real(r8) :: tem2(pcols) ! temporary workspace
+    real(r8) :: ftem(pcols) ! temporary workspace
+    real(r8) :: esl(pcols)  ! saturation vapor pressures over liquid water
+    real(r8) :: esi(pcols)  ! saturation vapor pressures over ice
 
     real(r8), pointer :: trefmnav(:) ! daily minimum tref
     real(r8), pointer :: trefmxav(:) ! daily maximum tref
@@ -2082,12 +2091,29 @@ if (hist_fld_active('Q030')) then
 
       !
       ! Calculate and output reference height RH (RHREFHT)
-      call qsat(cam_in%tref(1:ncol), state%ps(1:ncol), tem2(1:ncol), ftem(1:ncol), ncol)
+      call qsat(cam_in%tref(1:ncol), state%ps(1:ncol), esl(1:ncol), ftem(1:ncol), ncol)
       ftem(:ncol) = cam_in%qref(:ncol)/ftem(:ncol)*100._r8
 
-
       call outfld('RHREFHT',   ftem,      pcols, lchnk)
+      call outfld('RHREFHTMN', ftem,      pcols, lchnk)
+      call outfld('RHREFHTMX', ftem,      pcols, lchnk)
 
+      if (hist_fld_active('RHCFMIPHT') .or. hist_fld_active('RHCFMIPHTMN') .or. hist_fld_active('RHCFMIPHTMX')) then
+         call svp_ice_vect(cam_in%tref(1:ncol), esi(1:ncol), ncol)
+         do i=1,ncol
+            tem1(i)=ftem(i)*esl(i)/esi(i)
+         end do
+         do i=1,ncol
+           if (cam_in%tref(i) .gt. 273) then
+             tem2(i)=ftem(i)  !!wrt water
+           else
+             tem2(i)=tem1(i)  !!wrt ice
+           end if
+         end do
+         call outfld ('RHCFMIPHT',  tem2    ,pcols   ,lchnk     )
+         call outfld ('RHCFMIPHTMN',tem2    ,pcols   ,lchnk     )
+         call outfld ('RHCFMIPHTMX',tem2    ,pcols   ,lchnk     )
+      end if
 
 #if (defined BFB_CAM_SCAM_IOP )
       call outfld('shflx   ',cam_in%shf,   pcols,   lchnk)
