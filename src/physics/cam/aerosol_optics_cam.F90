@@ -213,33 +213,33 @@ contains
                'Aerosol optical depth summed over all sw wavelengths', flag_xyfill=.true.)
 
           call addfld ('EXTINCTdn'//diag(ilist),    (/ 'lev' /), 'A','/m',&
-               'Aerosol extinction 550 nm, day only', flag_xyfill=.true.)
+               'Aerosol extinction 550 nm, day night', flag_xyfill=.true.)
           call addfld ('EXTINCTUVdn'//diag(ilist),  (/ 'lev' /), 'A','/m',&
-               'Aerosol extinction 350 nm, day only', flag_xyfill=.true.)
+               'Aerosol extinction 350 nm, day night', flag_xyfill=.true.)
           call addfld ('EXTINCTNIRdn'//diag(ilist), (/ 'lev' /), 'A','/m',&
-               'Aerosol extinction 1020 nm, day only', flag_xyfill=.true.)
+               'Aerosol extinction 1020 nm, day night', flag_xyfill=.true.)
           call addfld ('ABSORBdn'//diag(ilist),     (/ 'lev' /), 'A','/m',&
-               'Aerosol absorption, day only', flag_xyfill=.true.)
+               'Aerosol absorption, day night', flag_xyfill=.true.)
           call addfld ('AODVISdn'//diag(ilist),   horiz_only,  'A','  ', &
                'Aerosol optical depth 550 nm', flag_xyfill=.true.)
           call addfld ('AODVISstdn'//diag(ilist), horiz_only,  'A','  ', &
-               'Stratospheric aerosol optical depth 550 nm, day only', flag_xyfill=.true.)
+               'Stratospheric aerosol optical depth 550 nm, day night', flag_xyfill=.true.)
           call addfld ('AODNIRstdn'//diag(ilist), horiz_only,  'A','  ', &
-               'Stratospheric aerosol optical depth 1020 nm, day only', flag_xyfill=.true.)
+               'Stratospheric aerosol optical depth 1020 nm, day night', flag_xyfill=.true.)
           call addfld ('AODUVstdn'//diag(ilist),  horiz_only,  'A','  ', &
-               'Stratospheric aerosol optical depth 350 nm, day only', flag_xyfill=.true.)
+               'Stratospheric aerosol optical depth 350 nm, day night', flag_xyfill=.true.)
           call addfld ('AODUVdn'//diag(ilist),      horiz_only,  'A','  ', &
-               'Aerosol optical depth 350 nm, day only', flag_xyfill=.true.)
+               'Aerosol optical depth 350 nm, day night', flag_xyfill=.true.)
           call addfld ('AODNIRdn'//diag(ilist),     horiz_only,  'A','  ', &
-               'Aerosol optical depth 1020 nm, day only', flag_xyfill=.true.)
+               'Aerosol optical depth 1020 nm, day night', flag_xyfill=.true.)
           call addfld ('AODABSdn'//diag(ilist),     horiz_only,  'A','  ', &
-               'Aerosol absorption optical depth 550 nm, day only', flag_xyfill=.true.)
+               'Aerosol absorption optical depth 550 nm, day night', flag_xyfill=.true.)
           call addfld ('AODxASYMdn'//diag(ilist),   horiz_only,  'A','  ', &
-               'Aerosol optical depth 550 * asymmetry factor, day only', flag_xyfill=.true.)
+               'Aerosol optical depth 550 * asymmetry factor, day night', flag_xyfill=.true.)
           call addfld ('EXTxASYMdn'//diag(ilist),   (/ 'lev' /), 'A','  ', &
-               'extinction 550 nm * asymmetry factor, day only',  flag_xyfill=.true.)
+               'extinction 550 nm * asymmetry factor, day night',  flag_xyfill=.true.)
           call addfld ('AODTOTdn'//diag(ilist), horiz_only, 'A','1',&
-               'Aerosol optical depth summed over all sw wavelengths, day only')
+               'Aerosol optical depth summed over all sw wavelengths, day night')
 
           if (lw10um_indx>0) then
              call addfld('AODABSLW'//diag(ilist), (/ 'lev' /), 'A','/m',&
@@ -1001,6 +1001,18 @@ contains
       call outfld('AODUVstdn'//diag(list_idx),  aoduvst, pcols, lchnk)
       call outfld('AODNIRstdn'//diag(list_idx), aodnirst,pcols, lchnk)
 
+      ! Compute single-scatter albedo before aodvis is set to fillvalue on night
+      ! columns, so that SSAVISdn is valid on both day and night columns
+      if (list_idx == 0) then
+         do icol = 1, ncol
+            if (aodvis(icol) > 1.e-10_r8) then
+               ssavis(icol) = ssavis(icol)/aodvis(icol)
+            else
+               ssavis(icol) = 0.925_r8
+            endif
+         end do
+      end if
+
       do icol = 1, nnite
          aodvis(idxnite(icol)) = fillvalue
          aodnir(idxnite(icol)) = fillvalue
@@ -1036,13 +1048,6 @@ contains
 
       ! These diagnostics are output only for climate list
       if (list_idx == 0) then
-         do icol = 1, ncol
-            if (aodvis(icol) > 1.e-10_r8) then
-               ssavis(icol) = ssavis(icol)/aodvis(icol)
-            else
-               ssavis(icol) = 0.925_r8
-            endif
-         end do
          call outfld('SSAVISdn',        ssavis,        pcols, lchnk)
 
          call outfld('BURDENDUSTdn',    burdendust,    pcols, lchnk)
