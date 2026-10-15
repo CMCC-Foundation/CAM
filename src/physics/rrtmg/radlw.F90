@@ -45,7 +45,7 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
                         qrl     ,qrlc      ,                          &
                         flns    ,flnt      ,flnsc     ,flntc  ,flwds, &
                         flut    ,flutc     ,fnl       ,fcnl   ,fldsc, &
-                        lu      ,ld        )
+                        lu      ,ld        ,flutoa    ,flutoac        )
 
 !-----------------------------------------------------------------------
    use cam_history,         only: outfld
@@ -84,6 +84,8 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
    real(r8), intent(out) :: flnsc(pcols)         ! Clear sky surface cooing
    real(r8), intent(out) :: flntc(pcols)         ! Net clear sky outgoing flux
    real(r8), intent(out) :: flutc(pcols)         ! Upward clear-sky flux at top of model
+   real(r8), optional, intent(out) :: flutoa(pcols)  ! Upward flux at top of atmosphere (top of RRTMG extra layer)
+   real(r8), optional, intent(out) :: flutoac(pcols) ! Upward clear-sky flux at top of atmosphere (top of RRTMG extra layer)
    real(r8), intent(out) :: flwds(pcols)         ! Down longwave flux at surface
    real(r8), intent(out) :: fldsc(pcols)         ! Down longwave clear flux at surface
    real(r8), intent(out) :: fcnl(pcols,pverp)    ! clear sky net flux at interfaces
@@ -214,6 +216,12 @@ subroutine rad_rrtmg_lw(lchnk   ,ncol      ,rrtmg_levs,r_state,       &
    flntc(:ncol) = uflxc(:ncol,rrtmg_levs) - dflxc(:ncol,rrtmg_levs)
    flut(:ncol)  = uflx (:ncol,rrtmg_levs)
    flutc(:ncol) = uflxc(:ncol,rrtmg_levs)
+
+   ! Upward fluxes at the top of atmosphere, i.e. at the top of the extra layer
+   ! added by RRTMG above the model top (interface rrtmg_levs+1), consistent
+   ! with the SW TOA fluxes (FSNTOA, FSUTOA) computed in radsw.F90
+   if (present(flutoa))  flutoa(:ncol)  = uflx (:ncol,rrtmg_levs+1)
+   if (present(flutoac)) flutoac(:ncol) = uflxc(:ncol,rrtmg_levs+1)
 
    !
    ! Reverse vertical indexing here for CAM arrays to go from top to bottom.

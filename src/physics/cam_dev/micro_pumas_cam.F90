@@ -175,6 +175,10 @@ integer :: &
      evprain_st_idx,     &! Evaporation rate of stratiform rain [kg/kg/s]. >= 0.
      evpsnow_st_idx       ! Evaporation rate of stratiform snow [kg/kg/s]. >= 0.
 
+! CCN at S=0.1% and S=0.2% stored by ndrop (cloud-top CCN diagnostics), -1 if not available
+integer :: ccn_s01_idx = -1
+integer :: ccn_s02_idx = -1
+
 ! Fields needed as inputs to COSP
 integer :: &
      ls_mrprc_idx,    ls_mrsnw_idx,    &
@@ -1102,6 +1106,7 @@ subroutine micro_pumas_cam_init(pbuf2d)
    call addfld ('ICINC',      (/ 'lev' /), 'A', 'm-3',      'Prognostic in-cloud ice number conc'                     )
    call addfld ('EFFLIQ_IND', (/ 'lev' /), 'A','Micron',    'Prognostic droplet effective radius (indirect effect)'   )
    call addfld ('CDNUMC',     horiz_only,  'A', '1/m2',     'Vertically-integrated droplet concentration'             )
+   call addfld ('CLDLIQTOT',  horiz_only,  'A', 'fraction', 'Vertically-integrated liquid cloud seen from TOA (max-random overlap)' )
    call addfld ('MPICLWPI',   horiz_only,  'A', 'kg/m2',    'Vertically-integrated &
         &in-cloud Initial Liquid WP (Before Micro)' )
    call addfld ('MPICIWPI',   horiz_only,  'A', 'kg/m2',    'Vertically-integrated &
@@ -1145,6 +1150,8 @@ subroutine micro_pumas_cam_init(pbuf2d)
    call addfld ('ACTNI',       horiz_only,   'A', 'm-3',   'Average Cloud Top ice number'                                      )
 
    call addfld ('FCTL',        horiz_only,   'A', 'fraction', 'Fractional occurrence of cloud top liquid'                         )
+   call addfld ('ACTCCN01',    horiz_only,   'A', 'm-3',      'Cloud top CCN at S=0.1% (STP) times cloud top liquid fraction'     )
+   call addfld ('ACTCCN02',    horiz_only,   'A', 'm-3',      'Cloud top CCN at S=0.2% (STP) times cloud top liquid fraction'     )
    call addfld ('FCTI',        horiz_only,   'A', 'fraction', 'Fractional occurrence of cloud top ice'                            )
 
    ! New frequency arrays for mixed phase and supercooled liquid (only and mixed) for (a) Cloud Top and (b) everywhere..
@@ -1368,6 +1375,8 @@ subroutine micro_pumas_cam_init(pbuf2d)
    concld_idx   = pbuf_get_index('CONCLD')
 
    naai_idx     = pbuf_get_index('NAAI')
+   ccn_s01_idx  = pbuf_get_index('CCN_S01', errcode=ierr)
+   ccn_s02_idx  = pbuf_get_index('CCN_S02', errcode=ierr)
    naai_hom_idx = pbuf_get_index('NAAI_HOM')
    npccn_idx    = pbuf_get_index('NPCCN')
    rndst_idx    = pbuf_get_index('RNDST')
@@ -1474,6 +1483,8 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
    use cam_abortutils,  only: handle_allocate_error
 
    use stochastic_tau_cam, only: ncd
+   use pkg_cldoptics,      only: cldovrlap
+   use cloud_cover_diags,  only: cldsav
 
    type(physics_state),         intent(in)    :: state
    type(physics_ptend),         intent(out)   :: ptend
@@ -1686,6 +1697,11 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
    real(r8) :: fctslm_grid(pcols)
 
    real(r8) :: cdnumc_grid(pcols)           ! Vertically-integrated droplet concentration
+   real(r8) :: cldliqtot_grid(pcols)        ! Liquid cloud cover seen from TOA (max-random overlap)
+   real(r8) :: liqcld_ovl(pcols,pver)       ! Liquid cloud fraction used for the overlap (zero above top_lev)
+   integer  :: nmxrgn_liq(pcols)            ! Number of maximally overlapped regions (liquid cloud)
+   real(r8) :: pmxrgn_liq(pcols,pverp)      ! Lower interface pressure of each region (liquid cloud)
+   real(r8) :: dum_low(pcols), dum_med(pcols), dum_hgh(pcols)
    real(r8) :: icimrst_grid_out(pcols,pver) ! In stratus ice mixing ratio
    real(r8) :: icwmrst_grid_out(pcols,pver) ! In stratus water mixing ratio
 
@@ -1699,6 +1715,14 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
    real(r8) :: ctni_grid(pcols)
    real(r8) :: fcti_grid(pcols)
    real(r8) :: fctl_grid(pcols)
+   real(r8) :: actccn01_grid(pcols)        ! cloud top CCN (S=0.1%, STP, m-3) times cloud top liquid fraction
+   real(r8) :: actccn02_grid(pcols)        ! cloud top CCN (S=0.2%, STP, m-3) times cloud top liquid fraction
+   real(r8), pointer :: ccn_s01(:,:)       ! CCN at S=0.1% from ndrop (#/cm3, ambient)
+   real(r8), pointer :: ccn_s02(:,:)       ! CCN at S=0.2% from ndrop (#/cm3, ambient)
+   real(r8) :: stp_fac                     ! #/cm3 ambient -> m-3 at STP, times cloud top liquid fraction
+   logical  :: do_ctccn                    ! compute the cloud top CCN diagnostic
+   real(r8) :: rho_air                     ! air density at the cloud top layer (kg/m3)
+   real(r8) :: rho_stp                     ! air density at STP (kg/m3)
 
    real(r8) :: ftem_grid(pcols,pver)
 
@@ -3098,6 +3122,22 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
    cdnumc_grid(:ngrdcol) = sum(nc_grid(:ngrdcol,top_lev:pver) * &
         pdel_grid(:ngrdcol,top_lev:pver)/gravit, dim=2)
 
+   ! Liquid cloud cover seen from TOA, computed every microphysics step, so that
+   ! the monthly ratio CDNUMC/CLDLIQTOT is the liquid-cloud-cover-weighted in-cloud
+   ! column droplet number (CMIP7 cldnvi).
+   ! liqcldf is the stratiform cloud fraction (AST, liquid and ice), so a layer
+   ! counts as liquid cloud only where in-cloud liquid is present (same criterion
+   ! on icwmrst used for the cloud-top liquid diagnostics FCTL/ACTREL).
+   ! The maximally overlapped regions are those of the total cloud (CLD), as for
+   ! CLDTOT and the radiation, so that CLDLIQTOT <= CLDTOT by construction.
+   liqcld_ovl(:,:) = 0._r8
+   where (icwmrst_grid(:ngrdcol,top_lev:pver) > 1.e-7_r8)
+      liqcld_ovl(:ngrdcol,top_lev:pver) = liqcldf_grid(:ngrdcol,top_lev:pver)
+   end where
+   call cldovrlap(lchnk, ngrdcol, state%pint, cld_grid, nmxrgn_liq, pmxrgn_liq)
+   call cldsav(lchnk, ngrdcol, liqcld_ovl, state%pmid, cldliqtot_grid, dum_low, dum_med, dum_hgh, &
+               nmxrgn_liq, pmxrgn_liq)
+
    ! Averaging for new output fields
    efcout_grid      = 0._r8
    efiout_grid      = 0._r8
@@ -3141,6 +3181,15 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
    end do
 
    ! Cloud top effective radius and number.
+   actccn01_grid = 0._r8
+   actccn02_grid = 0._r8
+   do_ctccn = (ccn_s01_idx > 0) .and. (ccn_s02_idx > 0) .and. (.not. use_subcol_microp)
+   ! rair is a module variable in physconst (not a parameter): compute at run time
+   rho_stp  = 101325._r8 / (rair * 273.15_r8)
+   if (do_ctccn) then
+      call pbuf_get_field(pbuf, ccn_s01_idx, ccn_s01)
+      call pbuf_get_field(pbuf, ccn_s02_idx, ccn_s02)
+   end if
    fcti_grid  = 0._r8
    fctl_grid  = 0._r8
    ctrel_grid = 0._r8
@@ -3157,6 +3206,13 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
             ctrel_grid(i) = rel_grid(i,k) * liqcldf_grid(i,k)
             ctnl_grid(i)  = icwnc_grid(i,k) * liqcldf_grid(i,k)
             fctl_grid(i)  = liqcldf_grid(i,k)
+            ! Cloud top CCN at S=0.1% and S=0.2%, #/cm3 -> m-3, ambient -> STP, weighted as FCTL
+            if (do_ctccn) then
+               rho_air = state%pmid(i,k) / (rair * state%t(i,k))
+               stp_fac = 1.e6_r8 * (rho_stp / rho_air) * liqcldf_grid(i,k)
+               actccn01_grid(i) = ccn_s01(i,k) * stp_fac
+               actccn02_grid(i) = ccn_s02(i,k) * stp_fac
+            end if
 
             ! Cloud Top Mixed phase, supercooled liquid only and supercooled liquid mixed
             if (freqi_grid(i,k) > 0.01_r8) then
@@ -3432,11 +3488,14 @@ subroutine micro_pumas_cam_tend(state, ptend, dtime, pbuf)
    call outfld('ACTNL',       ctnl_grid,        pcols, lchnk)
    call outfld('ACTNI',       ctni_grid,        pcols, lchnk)
    call outfld('FCTL',        fctl_grid,        pcols, lchnk)
+   call outfld('ACTCCN01',    actccn01_grid,    pcols, lchnk)
+   call outfld('ACTCCN02',    actccn02_grid,    pcols, lchnk)
    call outfld('FCTI',        fcti_grid,        pcols, lchnk)
    call outfld('ICINC',       icinc_grid,       pcols, lchnk)
    call outfld('ICWNC',       icwnc_grid,       pcols, lchnk)
    call outfld('EFFLIQ_IND',  rel_fn_grid,      pcols, lchnk)
    call outfld('CDNUMC',      cdnumc_grid,      pcols, lchnk)
+   call outfld('CLDLIQTOT',   cldliqtot_grid,   pcols, lchnk)
    call outfld('REL',         rel_grid,         pcols, lchnk)
    call outfld('REI',         rei_grid,         pcols, lchnk)
    call outfld('MG_SADICE',   sadice_grid,      pcols, lchnk)

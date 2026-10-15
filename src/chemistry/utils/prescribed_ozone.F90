@@ -61,7 +61,7 @@ contains
   subroutine prescribed_ozone_init()
 
     use tracer_data, only : trcdata_init
-    use cam_history, only : addfld
+    use cam_history, only : addfld, horiz_only
 
     implicit none
 
@@ -86,6 +86,8 @@ contains
 
     call addfld(ozone_name, (/ 'lev' /), &
          'I','mol/mol', 'prescribed ozone' )
+    call addfld('TOZ', horiz_only, 'A', 'm', &
+         'Total ozone column (equivalent thickness at STP, 1 DU = 1e-5 m) of the prescribed ozone')
 
   end subroutine prescribed_ozone_init
 
@@ -194,6 +196,7 @@ end subroutine prescribed_ozone_readnl
     use phys_control, only : cam_physpkg_is
     use physconst,    only : mwdry                ! molecular weight dry air ~ kg/kmole
     use physconst,    only : boltz                ! J/K/molecule
+    use physconst,    only : gravit
     
     use physics_buffer, only : physics_buffer_desc, pbuf_get_chunk, pbuf_get_field, pbuf_set_field
 
@@ -210,6 +213,8 @@ end subroutine prescribed_ozone_readnl
     real(r8) :: amass
     real(r8) :: outdata(pcols,pver)
     real(r8),pointer :: tmpptr(:,:)
+    real(r8) :: toz(pcols)                     ! total ozone column (m at STP)
+    real(r8), parameter :: mol_per_du = 4.4615e-4_r8  ! 1 DU = 2.6867e20 molecules/m2 = 4.4615e-4 mol/m2
 
     character(len=32) :: units_str
 
@@ -228,7 +233,7 @@ end subroutine prescribed_ozone_readnl
     units_str = trim(to_lower(trim(fields(1)%units(:GLC(fields(1)%units)))))
 
     ! set the correct units and invoke history outfld
-!$OMP PARALLEL DO PRIVATE (C, NCOL, OUTDATA, TO_MMR, TMPPTR, PBUF_CHNK)
+!$OMP PARALLEL DO PRIVATE (C, NCOL, OUTDATA, TO_MMR, TMPPTR, PBUF_CHNK, TOZ)
     do c = begchunk,endchunk
        ncol = state(c)%ncol
      
@@ -251,6 +256,12 @@ end subroutine prescribed_ozone_readnl
 
        outdata(:ncol,:) = (amass/molmass)* tmpptr(:ncol,:) ! vmr
        call outfld( fields(1)%fldnam, outdata(:ncol,:), ncol, state(c)%lchnk )
+
+       ! Total ozone column (CMIP7 toz): ozone mass mixing ratio (dry air) integrated with
+       ! the dry pressure thickness, kg/m2 -> mol/m2 -> DU -> m (1 DU = 1e-5 m)
+       toz(:ncol) = sum(tmpptr(:ncol,:)*state(c)%pdeldry(:ncol,:), dim=2) / gravit &
+                    / (molmass*1.e-3_r8) / mol_per_du * 1.e-5_r8
+       call outfld( 'TOZ', toz(:ncol), ncol, state(c)%lchnk )
     enddo
 
   end subroutine prescribed_ozone_adv

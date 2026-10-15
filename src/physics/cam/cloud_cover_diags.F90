@@ -14,6 +14,7 @@ module cloud_cover_diags
 
   public :: cloud_cover_diags_init
   public :: cloud_cover_diags_out
+  public :: cldsav
 
    real(r8) plowmax             ! Max prs for low cloud cover range
    real(r8) plowmin             ! Min prs for low cloud cover range
@@ -39,6 +40,8 @@ subroutine cloud_cover_diags_init(sampling_seq)
 
   call addfld ('CLOUD', (/ 'lev' /), 'A','fraction','Cloud fraction'                        , sampling_seq=sampling_seq)
   call addfld ('CLDTOT',horiz_only,  'A','fraction','Vertically-integrated total cloud'     , sampling_seq=sampling_seq)
+  call addfld ('CLDTOTCONV',horiz_only,'A','fraction','Vertically-integrated convective cloud (CONCLD, same overlap as CLDTOT)', &
+               sampling_seq=sampling_seq)
 
   write(long_name_string,999) 'Vertically-integrated low cloud from ', plowmin, ' to ', plowmax, ' Pa'
   call addfld ('CLDLOW',horiz_only,  'A','fraction',long_name_string , sampling_seq=sampling_seq)
@@ -66,13 +69,17 @@ end subroutine cloud_cover_diags_init
 
 !===============================================================================
 !===============================================================================
-subroutine cloud_cover_diags_out(lchnk, ncol, cld, pmid, nmxrgn, pmxrgn )
+subroutine cloud_cover_diags_out(lchnk, ncol, cld, pmid, nmxrgn, pmxrgn, concld )
 
   integer,  intent(in) :: lchnk, ncol
   real(r8), intent(in) :: cld(pcols,pver)
   real(r8), intent(in) :: pmid(pcols,pver)
   integer,  intent(in) :: nmxrgn(pcols)
   real(r8), intent(in) :: pmxrgn(pcols,pverp)
+  real(r8), optional, intent(in) :: concld(pcols,pver)   ! convective cloud fraction
+
+  real(r8) :: cltot_conv(pcols)       ! Diagnostic total convective cloud cover
+  real(r8) :: dum_low(pcols), dum_med(pcols), dum_hgh(pcols)
 
   real(r8) :: cltot(pcols)            ! Diagnostic total cloud cover
   real(r8) :: cllow(pcols)            !       "     low  cloud cover
@@ -90,6 +97,16 @@ subroutine cloud_cover_diags_out(lchnk, ncol, cld, pmid, nmxrgn, pmxrgn )
   call outfld('CLDHGH  ',clhgh  ,pcols,lchnk)
 
   call outfld('CLOUD   ',cld    ,pcols,lchnk) 
+
+  !
+  ! Total convective cloud cover: same maximum-random overlap and the same
+  ! maximally overlapped regions used for CLDTOT, applied to the convective
+  ! cloud fraction, computed every radiation time step
+  !
+  if (present(concld)) then
+     call cldsav (lchnk, ncol, concld, pmid, cltot_conv, dum_low, dum_med, dum_hgh, nmxrgn, pmxrgn)
+     call outfld('CLDTOTCONV',cltot_conv ,pcols,lchnk)
+  end if
 
 end subroutine cloud_cover_diags_out
 

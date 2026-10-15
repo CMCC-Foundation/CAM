@@ -88,6 +88,9 @@ subroutine aer_rad_props_init()
       odv_names(i) = 'ODV_'//trim(aernames(i))
       call addfld (odv_names(i), horiz_only, 'A', '1', &
          trim(aernames(i))//' optical depth in visible band', flag_xyfill=.true.)
+      ! day-night version (defined on night columns too)
+      call addfld ('ODVdn_'//trim(aernames(i)), horiz_only, 'A', '1', &
+         trim(aernames(i))//' optical depth in visible band, day night')
    end do
 
    ! Determine default fields
@@ -710,6 +713,8 @@ subroutine aer_vis_diag_out(lchnk, ncol, nnite, idxnite, iaer, tau, diag_idx, tr
 
    ! compute total column aerosol optical depth
    tmp(1:ncol) = sum(tau(1:ncol,:), 2)
+   ! day-night output for bulk aerosols, before night columns are set to fillvalue
+   if (iaer > 0) call outfld('ODVdn_'//trim(odv_names(iaer)(5:)), tmp, pcols, lchnk)
    ! use fillvalue to indicate night columns
    do i = 1, nnite
       tmp(idxnite(i)) = fillvalue

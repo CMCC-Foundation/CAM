@@ -385,6 +385,10 @@ contains
         flag_xyfill=.true.)
    call addfld ('AODABSBC',      horiz_only, 'A','  ',    'Aerosol absorption optical depth 550 nm from BC, day only',&
         flag_xyfill=.true.)
+   call addfld ('AODABSDUST',    horiz_only, 'A','  ',    'Aerosol absorption optical depth 550 nm from dust, day only',&
+        flag_xyfill=.true.)
+   call addfld ('AODABSSO4',     horiz_only, 'A','  ',    'Aerosol absorption optical depth 550 nm from SO4, day only',&
+        flag_xyfill=.true.)
    call addfld ('BURDENDUST',    horiz_only, 'A','kg/m2', 'Dust aerosol burden, day only'        ,                    &
         flag_xyfill=.true.)
    call addfld ('BURDENSO4',     horiz_only, 'A','kg/m2', 'Sulfate aerosol burden, day only'     ,                    &
@@ -413,6 +417,10 @@ contains
    call addfld ('AODSSdn',         horiz_only, 'A','  ',    'Aerosol optical depth 550 nm from seasalt, day night',      &
         flag_xyfill=.true.)
    call addfld ('AODABSBCdn',      horiz_only, 'A','  ',    'Aerosol absorption optical depth 550 nm from BC, day night',&
+        flag_xyfill=.true.)
+   call addfld ('AODABSDUSTdn',    horiz_only, 'A','  ',    'Aerosol absorption optical depth 550 nm from dust, day night',&
+        flag_xyfill=.true.)
+   call addfld ('AODABSSO4dn',     horiz_only, 'A','  ',    'Aerosol absorption optical depth 550 nm from SO4, day night',&
         flag_xyfill=.true.)
    call addfld ('BURDENDUSTdn',    horiz_only, 'A','kg/m2', 'Dust aerosol burden, day night'        ,                    &
         flag_xyfill=.true.)
@@ -569,6 +577,8 @@ contains
     real(r8) :: aodabs(pcols)              ! absorption optical depth
 
     real(r8) :: aodabsbc(pcols)             ! absorption optical depth of BC
+    real(r8) :: aodabsdust(pcols)           ! absorption optical depth of dust (CMIP7 abs550dust)
+    real(r8) :: aodabsso4(pcols)            ! absorption optical depth of sulfate (CMIP7 abs550so4)
 
     real(r8) :: aodtot(pcols)
 
@@ -672,6 +682,8 @@ contains
     burdenseasalt = 0.0_r8
 
     aodabsbc = 0.0_r8
+    aodabsdust = 0.0_r8
+    aodabsso4 = 0.0_r8
     dustaod = 0.0_r8
     sulfaod = 0.0_r8
     pomaod = 0.0_r8
@@ -919,6 +931,9 @@ contains
 
 
             aodabsbc(icol) = aodabsbc(icol) + absbc(icol)*dopaer(icol)*(1.0_r8-palb(icol))
+            ! same partitioning for dust and sulfate (CMIP7 abs550dust, abs550so4)
+            aodabsdust(icol) = aodabsdust(icol) + absdust(icol)*dopaer(icol)*(1.0_r8-palb(icol))
+            aodabsso4(icol)  = aodabsso4(icol)  + abssulf(icol)*dopaer(icol)*(1.0_r8-palb(icol))
 
 
 
@@ -1058,6 +1073,8 @@ contains
          call outfld('BURDENSEASALTdn', burdenseasalt, pcols, lchnk)
 
          call outfld('AODABSBCdn',      aodabsbc,      pcols, lchnk)
+         call outfld('AODABSDUSTdn',    aodabsdust,    pcols, lchnk)
+         call outfld('AODABSSO4dn',     aodabsso4,     pcols, lchnk)
 
          call outfld('AODDUSTdn',       dustaod,       pcols, lchnk)
          call outfld('AODSO4dn',        sulfaod,       pcols, lchnk)
@@ -1079,6 +1096,8 @@ contains
             burdenbc(idxnite(icol))   = fillvalue
             burdenseasalt(idxnite(icol)) = fillvalue
             aodabsbc(idxnite(icol)) = fillvalue
+            aodabsdust(idxnite(icol)) = fillvalue
+            aodabsso4(idxnite(icol))  = fillvalue
 
             dustaod(idxnite(icol))    = fillvalue
             sulfaod(idxnite(icol))     = fillvalue
@@ -1098,6 +1117,8 @@ contains
          call outfld('BURDENBC'  ,    burdenbc,      pcols, lchnk)
          call outfld('BURDENSEASALT', burdenseasalt, pcols, lchnk)
          call outfld('AODABSBC',      aodabsbc,      pcols, lchnk)
+         call outfld('AODABSDUST',    aodabsdust,    pcols, lchnk)
+         call outfld('AODABSSO4',     aodabsso4,     pcols, lchnk)
          call outfld('AODDUST',       dustaod,       pcols, lchnk)
          call outfld('AODSO4',        sulfaod,       pcols, lchnk)
          call outfld('AODPOM',        pomaod,        pcols, lchnk)

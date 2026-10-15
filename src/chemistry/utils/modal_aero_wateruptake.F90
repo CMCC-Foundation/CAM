@@ -130,6 +130,11 @@ subroutine modal_aero_wateruptake_init(pbuf2d)
    
    call addfld('PM25',     (/ 'lev' /), 'A', 'kg/m3', 'PM2.5 concentration')
    call addfld('PM25_SRF', horiz_only,  'A', 'kg/m3', 'surface PM2.5 concentration')
+   call addfld('CONCCN',   (/ 'lev' /), 'A', 'm-3',   'Aerosol number concentration (interstitial modes, ambient)')
+   call addfld('MMRPM25',  (/ 'lev' /), 'A', 'kg/kg', 'PM2.5 dry aerosol mass mixing ratio')
+   call addfld('SFPM25',   horiz_only,  'A', 'kg/kg', 'PM2.5 ambient (wet) aerosol mass mixing ratio, lowest model level')
+   call addfld('SFPM1',    horiz_only,  'A', 'kg/kg', 'PM1 ambient (wet) aerosol mass mixing ratio, lowest model level')
+   call addfld('SFPM10',   horiz_only,  'A', 'kg/kg', 'PM10 ambient (wet) aerosol mass mixing ratio, lowest model level')
 
    if (is_first_step()) then
       ! initialize fields in physics buffer
@@ -234,6 +239,13 @@ subroutine modal_aero_wateruptake_dr(state, pbuf, list_idx_in, dgnumdry_m, dgnum
    real(r8) :: qs(pcols)             ! saturation specific humidity
 
    real(r8) :: pm25(pcols,pver)      ! PM2.5 diagnostics     
+   real(r8) :: conccn(pcols,pver)    ! aerosol number concentration (m-3)
+   real(r8) :: mmrpm25(pcols,pver)   ! PM2.5 dry mass mixing ratio (kg/kg)
+   real(r8) :: sfpm25(pcols)         ! PM2.5 ambient (wet) mass mixing ratio at the lowest level (kg/kg)
+   real(r8) :: fsub                  ! mass fraction below 2.5 um (same formulation as PM25)
+   real(r8) :: sfpm1(pcols)          ! PM1 ambient (wet) mass mixing ratio at the lowest level (kg/kg)
+   real(r8) :: sfpm10(pcols)         ! PM10 ambient (wet) mass mixing ratio at the lowest level (kg/kg)
+   real(r8) :: mwet                  ! ambient (dry + water) aerosol mass mixing ratio of a mode (kg/kg)
    real(r8) :: rhoair(pcols,pver) 
 
    character(len=3) :: trnum       ! used to hold mode number (as characters)
@@ -458,6 +470,42 @@ subroutine modal_aero_wateruptake_dr(state, pbuf, list_idx_in, dgnumdry_m, dgnum
 
       call outfld('PM25',     pm25(:,:),    pcols, lchnk)
       call outfld('PM25_SRF', pm25(:,pver), pcols, lchnk)
+
+      ! CMIP7 diagnostics:
+      !   CONCCN  (conccn):   number concentration of the interstitial modes, naer (#/kg) * air density
+      !   MMRPM25 (mmrpm2p5): PM2.5 dry mass mixing ratio, i.e. PM25 without the air density
+      !   SFPM25  (sfpm25):   PM2.5 ambient mass mixing ratio at the lowest level: dry mass plus
+      !                       aerosol water, size cut on the wet diameter
+      !   SFPM1   (sfpm1), SFPM10 (sfpm10): as SFPM25 with cut-off diameters of 1 and 10 um
+      ! The size cut uses the same formulation as PM25 (number median diameter)
+      conccn(:,:)  = 0._r8
+      mmrpm25(:,:) = 0._r8
+      sfpm25(:)    = 0._r8
+      sfpm1(:)     = 0._r8
+      sfpm10(:)    = 0._r8
+      do m = 1, nmodes
+         do k = top_lev, pver
+            do i = 1, ncol
+               conccn(i,k) = conccn(i,k) + naer(i,k,m)*rhoair(i,k)
+               fsub = 1._r8 - (0.5_r8 - 0.5_r8*erf(log(2.5e-6_r8/dgncur_a(i,k,m))/(2._r8**0.5_r8*alnsg(m))))
+               mmrpm25(i,k) = mmrpm25(i,k) + maer(i,k,m)*fsub
+            end do
+         end do
+         do i = 1, ncol
+            mwet = maer(i,pver,m) + qaerwat(i,pver,m)
+            fsub = 1._r8 - (0.5_r8 - 0.5_r8*erf(log(2.5e-6_r8/dgncur_awet(i,pver,m))/(2._r8**0.5_r8*alnsg(m))))
+            sfpm25(i) = sfpm25(i) + mwet*fsub
+            fsub = 1._r8 - (0.5_r8 - 0.5_r8*erf(log(1.0e-6_r8/dgncur_awet(i,pver,m))/(2._r8**0.5_r8*alnsg(m))))
+            sfpm1(i) = sfpm1(i) + mwet*fsub
+            fsub = 1._r8 - (0.5_r8 - 0.5_r8*erf(log(10.0e-6_r8/dgncur_awet(i,pver,m))/(2._r8**0.5_r8*alnsg(m))))
+            sfpm10(i) = sfpm10(i) + mwet*fsub
+         end do
+      end do
+      call outfld('CONCCN',   conccn,       pcols, lchnk)
+      call outfld('MMRPM25',  mmrpm25,      pcols, lchnk)
+      call outfld('SFPM25',   sfpm25,       pcols, lchnk)
+      call outfld('SFPM1',    sfpm1,        pcols, lchnk)
+      call outfld('SFPM10',   sfpm10,       pcols, lchnk)
 
    end if
 

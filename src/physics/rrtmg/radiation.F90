@@ -89,6 +89,8 @@ type rad_out_t
    real(r8) :: flntc(pcols)         ! Clear sky lw flux at model top
    real(r8) :: flut(pcols)          ! Upward flux at top of model
    real(r8) :: flutc(pcols)         ! Upward Clear Sky flux at top of model
+   real(r8) :: flutoa(pcols)        ! Upward flux at top of atmosphere (top of RRTMG extra layer)
+   real(r8) :: flutoac(pcols)       ! Upward Clear Sky flux at top of atmosphere (top of RRTMG extra layer)
    real(r8) :: lwcf(pcols)          ! longwave cloud forcing
 
    real(r8) :: fln200(pcols)        ! net longwave flux interpolated to 200 mb
@@ -562,6 +564,10 @@ subroutine radiation_init(pbuf2d)
          call addfld('FLUT'//diag(icall),    horiz_only,  'A', 'W/m2', 'Upwelling longwave flux at top of model',          &
                                                                            sampling_seq='rad_lwsw')
          call addfld('FLUTC'//diag(icall),   horiz_only,  'A', 'W/m2', 'Clearsky upwelling longwave flux at top of model', &
+                                                                           sampling_seq='rad_lwsw')
+         call addfld('FLUTOA'//diag(icall),  horiz_only,  'A', 'W/m2', 'Upwelling longwave flux at top of atmosphere',     &
+                                                                           sampling_seq='rad_lwsw')
+         call addfld('FLUTOAC'//diag(icall), horiz_only,  'A', 'W/m2', 'Clearsky upwelling longwave flux at top of atmosphere', &
                                                                            sampling_seq='rad_lwsw')
          call addfld('LWCF'//diag(icall),    horiz_only,  'A', 'W/m2', 'Longwave cloud forcing', sampling_seq='rad_lwsw')
 
@@ -1262,7 +1268,7 @@ subroutine radiation_tend( &
                   aer_lw_abs, cldfprime, c_cld_lw_abs, qrl, rd%qrlc, &
                   flns, flnt, rd%flnsc, rd%flntc, cam_out%flwds,     &
                   rd%flut, rd%flutc, fnl, fcnl, rd%fldsc,            &
-                  lu, ld)
+                  lu, ld, rd%flutoa, rd%flutoac)
 
                !  Output fluxes at 200 mb
                call vertinterp(ncol, pcols, pverp, state%pint, 20000._r8, fnl,  rd%fln200)
@@ -1508,6 +1514,8 @@ subroutine radiation_output_lw(lchnk, ncol, icall, rd, pbuf, cam_out, freqclr, f
 
    call outfld('FLUT'//diag(icall),    rd%flut,       pcols, lchnk)
    call outfld('FLUTC'//diag(icall),   rd%flutc,      pcols, lchnk)
+   call outfld('FLUTOA'//diag(icall),  rd%flutoa,     pcols, lchnk)
+   call outfld('FLUTOAC'//diag(icall), rd%flutoac,    pcols, lchnk)
 
    ftem(:ncol) = rd%flutc(:ncol) - rd%flut(:ncol)
    call outfld('LWCF'//diag(icall),    ftem,          pcols, lchnk)

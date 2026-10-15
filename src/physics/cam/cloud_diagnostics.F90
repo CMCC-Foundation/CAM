@@ -28,6 +28,7 @@ module cloud_diagnostics
 
 ! Local variables
    integer :: dei_idx, mu_idx, lambda_idx, iciwp_idx, iclwp_idx, cld_idx  ! index into pbuf for cloud fields
+   integer :: concld_idx = -1  ! index into pbuf for convective cloud fraction (CONCLD), -1 if not available
    integer :: ixcldice, ixcldliq, rei_idx, rel_idx
 
    logical :: do_cld_diag, mg_clouds, rk_clouds, camrt_rad, spcam_m2005_clouds, spcam_sam1mom_clouds
@@ -94,12 +95,14 @@ contains
 !-----------------------------------------------------------------------
 
     character(len=16) :: wpunits, sampling_seq
+    integer           :: ierr_concld
     logical           :: history_amwg                  ! output the variables used by the AMWG diag package
 
 
     !-----------------------------------------------------------------------
 
     cld_idx    = pbuf_get_index('CLD')
+    concld_idx = pbuf_get_index('CONCLD', errcode=ierr_concld)
 
     call phys_getopts(use_spcam_out=use_spcam)
 
@@ -246,6 +249,7 @@ subroutine cloud_diagnostics_calc(state,  pbuf)
     real(r8), pointer :: pmxrgn(:,:)    ! Maximum values of pressure for each
 
     integer :: itim_old
+    real(r8), pointer :: concld(:,:)    ! convective cloud fraction
 
     real(r8) :: cwp   (pcols,pver)      ! in-cloud cloud (total) water path
     real(r8) :: gicewp(pcols,pver)      ! grid-box cloud ice water path
@@ -433,7 +437,12 @@ subroutine cloud_diagnostics_calc(state,  pbuf)
     if(.not. use_spcam) then ! in spcam, these diagnostics are calcluated in crm_physics.F90
 ! Cloud cover diagnostics (done in radiation_tend for camrt)
     if (.not.camrt_rad) then
-       call cloud_cover_diags_out(lchnk, ncol, cld, state%pmid, nmxrgn, pmxrgn )
+       if (concld_idx > 0) then
+          call pbuf_get_field(pbuf, concld_idx, concld, start=(/1,1,itim_old/), kount=(/pcols,pver,1/) )
+          call cloud_cover_diags_out(lchnk, ncol, cld, state%pmid, nmxrgn, pmxrgn, concld=concld )
+       else
+          call cloud_cover_diags_out(lchnk, ncol, cld, state%pmid, nmxrgn, pmxrgn )
+       end if
     endif
     end if
     
