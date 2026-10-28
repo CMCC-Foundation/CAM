@@ -57,6 +57,8 @@ character(len=8) :: ccn_name(psat)= &
 ! indices in state and pbuf structures
 integer :: numliq_idx = -1
 integer :: kvh_idx    = -1
+integer :: ccn_s01_idx = -1  ! pbuf index of CCN at S=0.1% (cloud-top CCN diagnostic), -1 if not registered
+integer :: ccn_s02_idx = -1  ! pbuf index of CCN at S=0.2% (cloud-top CCN diagnostic), -1 if not registered
 
 logical :: history_aerosol      ! Output the aerosol tendencies
 character(len=fieldname_len), allocatable :: fieldname(:)    ! names for drop nuc tendency output fields
@@ -83,6 +85,7 @@ subroutine ndrop_init(aero_props)
    character(len=128)  :: long_name
    character(len=8)    :: unit
    logical :: history_amwg         ! output the variables used by the AMWG diag package
+   integer :: ierr_ccn
 
    !-------------------------------------------------------------------------------
 
@@ -90,6 +93,8 @@ subroutine ndrop_init(aero_props)
    call cnst_get_ind('NUMLIQ', numliq_idx)
 
    kvh_idx = pbuf_get_index('kvh')
+   ccn_s01_idx = pbuf_get_index('CCN_S01', errcode=ierr_ccn)
+   ccn_s02_idx = pbuf_get_index('CCN_S02', errcode=ierr_ccn)
 
    aten = 2._r8*mwh2o*surften/(r_universal*tmelt*rhoh2o)
 
@@ -303,6 +308,8 @@ subroutine dropmixnuc( aero_props, aero_state, &
    real(r8), allocatable :: coltend(:,:)       ! column tendency for diagnostic output
    real(r8), allocatable :: coltend_cw(:,:)    ! column tendency
    real(r8) :: ccn(pcols,pver,psat)    ! number conc of aerosols activated at supersat
+   real(r8), pointer :: ccn_s01(:,:)   ! CCN at S=0.1% stored in pbuf (#/cm3)
+   real(r8), pointer :: ccn_s02(:,:)   ! CCN at S=0.2% stored in pbuf (#/cm3)
 
    !for gas species turbulent mixing
    real(r8), pointer :: rgas(:, :, :)
@@ -1021,6 +1028,17 @@ subroutine dropmixnuc( aero_props, aero_state, &
    do l = 1, psat
       call outfld(ccn_name(l), ccn(1,1,l), pcols, lchnk)
    enddo
+
+   ! Store CCN at S=0.1% (supersat(3)) and S=0.2% (supersat(4)), #/cm3, for the
+   ! cloud-top CCN diagnostics in the microphysics
+   if (ccn_s01_idx > 0) then
+      call pbuf_get_field(pbuf, ccn_s01_idx, ccn_s01)
+      ccn_s01(:ncol,:) = ccn(:ncol,:,3)
+   end if
+   if (ccn_s02_idx > 0) then
+      call pbuf_get_field(pbuf, ccn_s02_idx, ccn_s02)
+      ccn_s02(:ncol,:) = ccn(:ncol,:,4)
+   end if
 
    ! do column tendencies
    do m = 1, nbin

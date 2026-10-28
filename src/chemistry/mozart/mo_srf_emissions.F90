@@ -24,6 +24,7 @@ module mo_srf_emissions
      character(len=shr_kind_cl),pointer :: sectors(:)
      type(trfld), pointer      :: fields(:)
      type(trfile)              :: file
+     logical                   :: is_bb = .false.  ! biomass burning file ('_bb_' in the file name)
   end type emission
 
   private
@@ -36,6 +37,12 @@ module mo_srf_emissions
   type(emission), allocatable :: emissions(:)
   integer                     :: n_emis_files
   integer :: c10h16_ndx, isop_ndx
+
+  ! Biomass burning emission diagnostics (CMIP7 emibb*): species with at least one
+  ! biomass burning file, identified by '_bb_' in the file name (CMIP7 BB4CMIP files)
+  logical :: has_bb(gas_pcnst) = .false.
+  character(len=24) :: bb_name(gas_pcnst) = ' '   ! history field name per species
+  character(len=*), parameter :: bb_prefix = 'SFBB_'
 
 contains
 
@@ -56,6 +63,7 @@ contains
     use chem_surfvals,    only : flbc_list
     use string_utils,     only : GLC
     use m_MergeSorts,     only : IndexSort
+    use cam_history,      only : addfld, horiz_only
 
     implicit none
 
@@ -177,7 +185,20 @@ contains
        emissions(m)%mw               = adv_mass(emis_indexes(indx(m)))                     ! g / mole
        emissions(m)%filename         = emis_filenam(indx(m))
        emissions(m)%scalefactor      = emis_scalefactor(indx(m))
+       emissions(m)%is_bb            = index(emissions(m)%filename, '_bb_') > 0
     enddo
+
+    !-----------------------------------------------------------------------
+    ! 	... biomass burning emission diagnostics, one field per species
+    !-----------------------------------------------------------------------
+    do m = 1, n_emis_files
+       if (emissions(m)%is_bb .and. .not. has_bb(emissions(m)%spc_ndx)) then
+          has_bb(emissions(m)%spc_ndx) = .true.
+          bb_name(emissions(m)%spc_ndx) = bb_prefix//trim(emissions(m)%species)
+          call addfld(bb_name(emissions(m)%spc_ndx), horiz_only, 'A', 'kg/m2/s', &
+               trim(emissions(m)%species)//' surface emission flux from biomass burning files')
+       end if
+    end do
 
     !-----------------------------------------------------------------------
     ! read emis files to determine number of sectors
@@ -324,6 +345,7 @@ contains
     use time_manager, only : get_curr_calday
     use string_utils, only : to_lower, GLC
     use phys_grid,    only : get_rlat_all_p, get_rlon_all_p
+    use cam_history,  only : outfld
 
     implicit none
 
@@ -359,6 +381,7 @@ contains
 
     real(r8) :: flux(ncol)
     real(r8) :: mfactor
+    real(r8) :: bbflx(ncol,gas_pcnst)   ! biomass burning emission flux (kg/m2/s)
     integer  :: isec
 
     character(len=12),parameter :: mks_units(4) = (/ "kg/m2/s     ", &
@@ -370,6 +393,7 @@ contains
     real(r8), dimension(ncol) :: rlats, rlons
 
     sflx(:,:) = 0._r8
+    bbflx(:,:) = 0._r8
 
     !--------------------------------------------------------
     !	... set non-zero emissions
@@ -386,13 +410,19 @@ contains
        units = to_lower(trim(emissions(m)%fields(1)%units(:GLC(emissions(m)%fields(1)%units))))
 
        if ( any( mks_units(:) == units ) ) then
-          sflx(:ncol,n) = sflx(:ncol,n) + flux(:ncol)
+          mfactor = 1._r8
        else
           mfactor = amufac * emissions(m)%mw
-          sflx(:ncol,n) = sflx(:ncol,n) + flux(:ncol) * mfactor
        endif
+       sflx(:ncol,n) = sflx(:ncol,n) + flux(:ncol) * mfactor
+       if (emissions(m)%is_bb) bbflx(:ncol,n) = bbflx(:ncol,n) + flux(:ncol) * mfactor
 
     end do emis_loop
+
+    ! biomass burning emission diagnostics (same units as sflx, kg/m2/s)
+    do n = 1, gas_pcnst
+       if (has_bb(n)) call outfld(trim(bb_name(n)), bbflx(:ncol,n), ncol, lchnk)
+    end do
 
     call get_rlat_all_p( lchnk, ncol, rlats )
     call get_rlon_all_p( lchnk, ncol, rlons )

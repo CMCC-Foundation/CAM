@@ -13,7 +13,7 @@ use physics_buffer,  only: physics_buffer_desc, pbuf_add_field, dtype_r8
 use physics_buffer,  only: dyn_time_lvls, pbuf_get_field, pbuf_get_index, pbuf_old_tim_idx
 
 use cam_history,     only: outfld, write_inithist, hist_fld_active, inithist_all
-use cam_history_support, only: max_fieldname_len
+use cam_history_support, only: max_fieldname_len, fillvalue
 use constituents,    only: pcnst, cnst_name, cnst_longname, cnst_cam_outfld
 use constituents,    only: ptendnam, apcnst, bpcnst, cnst_get_ind
 use dycore,          only: dycore_is
@@ -341,6 +341,20 @@ contains
     call addfld ('V020',       horiz_only,  'A', 'm/s','Meridional wind at 20 mbar pressure surface')
     call addfld ('V010',       horiz_only,  'A', 'm/s','Meridional wind at 10 mbar pressure surface')
 
+    ! CMIP7 plev3 (850, 500, 250 hPa) fields with "where air" masking: fillvalue where the
+    ! pressure level is below the surface (p > PS), for ta/ua/va tpt-p3 (6-hourly instantaneous)
+    call addfld ('T850air', horiz_only, 'A', 'K',   'Temperature at 850 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('T500air', horiz_only, 'A', 'K',   'Temperature at 500 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('T250air', horiz_only, 'A', 'K',   'Temperature at 250 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('U850air', horiz_only, 'A', 'm/s', 'Zonal wind at 850 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('U500air', horiz_only, 'A', 'm/s', 'Zonal wind at 500 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('U250air', horiz_only, 'A', 'm/s', 'Zonal wind at 250 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('V850air', horiz_only, 'A', 'm/s', 'Meridional wind at 850 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('V500air', horiz_only, 'A', 'm/s', 'Meridional wind at 500 hPa, missing below the surface', flag_xyfill=.true.)
+    call addfld ('V250air', horiz_only, 'A', 'm/s', 'Meridional wind at 250 hPa, missing below the surface', flag_xyfill=.true.)
+    ! CMIP7 zg500 (daily mean "where air")
+    call addfld ('Z500air', horiz_only, 'A', 'm',   'Geopotential Z at 500 hPa, missing below the surface', flag_xyfill=.true.)
+
     call register_vector_field('U1000', 'V1000')
     call register_vector_field('U925', 'V925')
     call register_vector_field('U850', 'V850')
@@ -565,14 +579,22 @@ contains
     call addfld ('TREFHTMX', horiz_only, 'X','K','Maximum reference height temperature over output period')
     call addfld ('QREFHT',   horiz_only, 'A', 'kg/kg','Reference height humidity')
     call addfld ('U10',      horiz_only, 'A', 'm/s','10m wind speed')
+    call addfld ('UAS',      horiz_only, 'A', 'm/s','10m eastward wind (U10 with lowest model level wind direction)')
+    call addfld ('VAS',      horiz_only, 'A', 'm/s','10m northward wind (U10 with lowest model level wind direction)')
+    call addfld ('HEATIDX',  horiz_only, 'A', 'degC', 'NOAA heat index at reference height (defined for T >= 299.817 K)', &
+                 flag_xyfill=.true.)
+    call addfld ('HEATIDXMX',horiz_only, 'X', 'degC', 'Maximum NOAA heat index at reference height over output period', &
+                 flag_xyfill=.true.)
+    call addfld ('WBGT',     horiz_only, 'A', 'degC', 'Wet bulb globe temperature at reference height')
+    call addfld ('WBGTMX',   horiz_only, 'X', 'degC', 'Maximum wet bulb globe temperature over output period')
     call addfld ('UGUST',    horiz_only, 'A', 'm/s','Gustiness term added to U10')
     call addfld ('U10WITHGUSTS',horiz_only, 'A', 'm/s','10m wind speed with gustiness added')
-    call addfld ('RHREFHT',  horiz_only, 'A', 'fraction','Reference height relative humidity')
-    call addfld ('RHREFHTMN',  horiz_only, 'M', 'fraction','Minimum reference height relative humidity')
-    call addfld ('RHREFHTMX',  horiz_only, 'X', 'fraction','Maximum reference height relative humidity')
-    call addfld ('RHCFMIPHT',horiz_only, 'A', 'fraction','Reference height relative humidity with respect to water above 273 K, ice below 273 K')
-    call addfld ('RHCFMIPHTMN',horiz_only, 'M', 'fraction','Minimum reference height relative humidity with respect to water above 273 K, ice below 273 K')
-    call addfld ('RHCFMIPHTMX',horiz_only, 'X', 'fraction','Maximum reference height relative humidity with respect to water above 273 K, ice below 273 K')
+    call addfld ('RHREFHT',  horiz_only, 'A', 'percent','Reference height relative humidity')
+    call addfld ('RHREFHTMN',  horiz_only, 'M', 'percent','Minimum reference height relative humidity')
+    call addfld ('RHREFHTMX',  horiz_only, 'X', 'percent','Maximum reference height relative humidity')
+    call addfld ('RHCFMIPHT',horiz_only, 'A', 'percent','Reference height relative humidity with respect to water above 273 K, ice below 273 K')
+    call addfld ('RHCFMIPHTMN',horiz_only, 'M', 'percent','Minimum reference height relative humidity with respect to water above 273 K, ice below 273 K')
+    call addfld ('RHCFMIPHTMX',horiz_only, 'X', 'percent','Maximum reference height relative humidity with respect to water above 273 K, ice below 273 K')
 
     call addfld ('LANDFRAC', horiz_only, 'A', 'fraction','Fraction of sfc area covered by land')
     call addfld ('ICEFRAC',  horiz_only, 'A', 'fraction','Fraction of sfc area covered by sea-ice')
@@ -996,6 +1018,9 @@ contains
     real(r8) :: z3(pcols,pver)    ! geo-potential height
     real(r8) :: p_surf(pcols)     ! data interpolated to a pressure surface
     real(r8) :: timestep(pcols)   ! used for outfld call
+    integer  :: iplev3            ! index of the CMIP7 plev3 levels
+    real(r8),         parameter :: plev3_pa(3)   = (/ 85000._r8, 50000._r8, 25000._r8 /)
+    character(len=3), parameter :: plev3_name(3) = (/ '850', '500', '250' /)
 
     real(r8), pointer :: psl(:)   ! Sea Level Pressure
 
@@ -1065,6 +1090,13 @@ contains
       call vertinterp(ncol, pcols, pver, state%pmid, 50000._r8, z3, p_surf, &
           extrapolate='Z', ln_interp=.true., ps=state%ps, phis=state%phis, tbot=state%t(:,pver))
       call outfld('Z500    ', p_surf, pcols, lchnk)
+    end if
+    ! CMIP7 zg500 "where air": as Z500, fillvalue where 500 hPa is below the surface (p > PS)
+    if (hist_fld_active('Z500air')) then
+      call vertinterp(ncol, pcols, pver, state%pmid, 50000._r8, z3, p_surf, &
+          extrapolate='Z', ln_interp=.true., ps=state%ps, phis=state%phis, tbot=state%t(:,pver))
+      where (50000._r8 > state%ps(:ncol)) p_surf(:ncol) = fillvalue
+      call outfld('Z500air', p_surf, pcols, lchnk)
     end if
     if (hist_fld_active('Z400')) then
       call vertinterp(ncol, pcols, pver, state%pmid, 40000._r8, z3, p_surf, &
@@ -1376,6 +1408,29 @@ contains
       call vertinterp(ncol, pcols, pver, state%pmid, 2000._r8, state%v, p_surf)
       call outfld('V020    ', p_surf, pcols, lchnk )
     end if
+    ! CMIP7 plev3 fields "where air": interpolation as for T850/U850/V850 (linear in
+    ! pressure; T extrapolated with the ECMWF method between the lowest model level and
+    ! the surface, U and V take the lowest-level value there), then fillvalue where the
+    ! pressure level is below the surface (p > PS)
+    do iplev3 = 1, 3
+       if (hist_fld_active('T'//plev3_name(iplev3)//'air')) then
+          call vertinterp(ncol, pcols, pver, state%pmid, plev3_pa(iplev3), state%t, p_surf, &
+               extrapolate='T', ps=state%ps, phis=state%phis, tbot=state%t(:,pver))
+          where (plev3_pa(iplev3) > state%ps(:ncol)) p_surf(:ncol) = fillvalue
+          call outfld('T'//plev3_name(iplev3)//'air', p_surf, pcols, lchnk)
+       end if
+       if (hist_fld_active('U'//plev3_name(iplev3)//'air')) then
+          call vertinterp(ncol, pcols, pver, state%pmid, plev3_pa(iplev3), state%u, p_surf)
+          where (plev3_pa(iplev3) > state%ps(:ncol)) p_surf(:ncol) = fillvalue
+          call outfld('U'//plev3_name(iplev3)//'air', p_surf, pcols, lchnk)
+       end if
+       if (hist_fld_active('V'//plev3_name(iplev3)//'air')) then
+          call vertinterp(ncol, pcols, pver, state%pmid, plev3_pa(iplev3), state%v, p_surf)
+          where (plev3_pa(iplev3) > state%ps(:ncol)) p_surf(:ncol) = fillvalue
+          call outfld('V'//plev3_name(iplev3)//'air', p_surf, pcols, lchnk)
+       end if
+    end do
+
     if (hist_fld_active('V010')) then
       call vertinterp(ncol, pcols, pver, state%pmid, 1000._r8, state%v, p_surf)
       call outfld('V010    ', p_surf, pcols, lchnk )
@@ -2044,6 +2099,7 @@ if (hist_fld_active('Q030')) then
     use time_manager,     only: is_end_curr_day
     use co2_cycle,        only: c_i, co2_transport
     use constituents,     only: sflxnam
+    use physconst,        only: tmelt, epsilo
 
     !-----------------------------------------------------------------------
     !
@@ -2066,6 +2122,12 @@ if (hist_fld_active('Q030')) then
     real(r8) :: esi(pcols)  ! saturation vapor pressures over ice
 
     real(r8), pointer :: trefmnav(:) ! daily minimum tref
+    real(r8) :: wspd_bot     ! lowest model level wind speed
+    real(r8) :: uas(pcols)   ! 10m eastward wind
+    real(r8) :: vas(pcols)   ! 10m northward wind
+    real(r8) :: heatidx(pcols)  ! NOAA heat index (degC), fillvalue where TREFHT < 299.817 K
+    real(r8) :: wbgt(pcols)     ! wet bulb globe temperature (degC)
+    real(r8) :: tf_ref          ! reference height temperature (degF)
     real(r8), pointer :: trefmxav(:) ! daily maximum tref
 
     !
@@ -2086,6 +2148,23 @@ if (hist_fld_active('Q030')) then
       call outfld('TREFHTMN', cam_in%tref,      pcols, lchnk)
       call outfld('QREFHT',   cam_in%qref,      pcols, lchnk)
       call outfld('U10',      cam_in%u10,       pcols, lchnk)
+      !
+      ! 10m wind components: U10 (speed from the surface models, Monin-Obukhov
+      ! similarity) with the direction of the lowest model level wind, computed
+      ! every time step so that time means of the components are exact
+      !
+      do i = 1, ncol
+         wspd_bot = sqrt(state%u(i,pver)**2 + state%v(i,pver)**2)
+         if (wspd_bot > 1.e-6_r8) then
+            uas(i) = cam_in%u10(i) * state%u(i,pver) / wspd_bot
+            vas(i) = cam_in%u10(i) * state%v(i,pver) / wspd_bot
+         else
+            uas(i) = 0._r8
+            vas(i) = 0._r8
+         end if
+      end do
+      call outfld('UAS',      uas,              pcols, lchnk)
+      call outfld('VAS',      vas,              pcols, lchnk)
 !      call outfld('UGUST',    cam_in%ugustOut,  pcols, lchnk)
 !      call outfld('U10WITHGUSTS',cam_in%u10withGusts, pcols, lchnk)
 
@@ -2097,6 +2176,34 @@ if (hist_fld_active('Q030')) then
       call outfld('RHREFHT',   ftem,      pcols, lchnk)
       call outfld('RHREFHTMN', ftem,      pcols, lchnk)
       call outfld('RHREFHTMX', ftem,      pcols, lchnk)
+
+      !
+      ! CMIP7 heat stress indices at reference height, every time step
+      ! (time means and maxima of the time-step values):
+      !   NOAA heat index (noaahi2m): T in degF and RH in % from RHREFHT (ftem, q/qs
+      !   with qs from qsat, w.r.t. liquid water at these temperatures); defined only
+      !   for T >= 299.817 K, fillvalue otherwise (excluded from means and maxima)
+      !   WBGT (wbgt): 0.567*T_C + 0.393*e/100 + 3.94 with e = huss*ps/epsilo (Pa),
+      !   using the CAM ratio epsilo = mwh2o/mwdry
+      !
+      do i = 1, ncol
+         if (cam_in%tref(i) >= 299.817_r8) then
+            tf_ref = (cam_in%tref(i) - tmelt)*9._r8/5._r8 + 32._r8
+            heatidx(i) = -42.379_r8 + 2.04901523_r8*tf_ref + 10.14333127_r8*ftem(i)        &
+                         - 0.22475541_r8*tf_ref*ftem(i) - 6.83783e-3_r8*tf_ref**2         &
+                         - 5.481717e-2_r8*ftem(i)**2 + 1.22874e-3_r8*tf_ref**2*ftem(i)    &
+                         + 8.5282e-4_r8*tf_ref*ftem(i)**2 - 1.99e-6_r8*tf_ref**2*ftem(i)**2
+            heatidx(i) = (heatidx(i) - 32._r8)*5._r8/9._r8
+         else
+            heatidx(i) = fillvalue
+         end if
+         wbgt(i) = 0.567_r8*(cam_in%tref(i) - tmelt) &
+                   + 0.393_r8*(cam_in%qref(i)*state%ps(i)/epsilo)/100._r8 + 3.94_r8
+      end do
+      call outfld('HEATIDX',   heatidx,   pcols, lchnk)
+      call outfld('HEATIDXMX', heatidx,   pcols, lchnk)
+      call outfld('WBGT',      wbgt,      pcols, lchnk)
+      call outfld('WBGTMX',    wbgt,      pcols, lchnk)
 
       if (hist_fld_active('RHCFMIPHT') .or. hist_fld_active('RHCFMIPHTMN') .or. hist_fld_active('RHCFMIPHTMX')) then
          call svp_ice_vect(cam_in%tref(1:ncol), esi(1:ncol), ncol)

@@ -18,6 +18,7 @@ module phys_grid_ctem
   use shr_const_mod, only: rgas => shr_const_rgas ! J/K/kmole
   use shr_const_mod, only: grav => shr_const_g ! m/s2
   use air_composition, only: mbarv ! g/mole
+  use air_composition, only: cappav ! R/cp (composition dependent)
   use string_utils,  only: int2str
 
   implicit none
@@ -38,6 +39,10 @@ module phys_grid_ctem
   integer :: ntimesteps = -huge(1) ! number of time steps bewteen TEM calculations
 
   logical :: do_tem_diags = .false.
+
+  ! zonal wavenumbers removed from the longitude sampling of the zonal-average bins
+  ! (cubed sphere: 4-fold symmetry); an empty array disables the correction
+  integer, parameter :: ctem_lon_harmonics(3) = (/ 4, 8, 12 /)
 
 contains
 
@@ -171,7 +176,10 @@ contains
     end if
 
     ! initialize zonal-average and zonal-mean utility objects
-    call ZAobj%init(zalats,area,nzalat,GEN_GAUSSLATS=.false.)
+    ! LON_HARMONICS: remove the 4-fold (cubed-sphere) longitude sampling signature
+    ! of the bins, which otherwise leaks zonal wavenumbers 4, 8, 12 of the eddy
+    ! fluxes into the bin averages (zig-zag in latitude at high latitudes)
+    call ZAobj%init(zalats,area,nzalat,GEN_GAUSSLATS=.false.,LON_HARMONICS=ctem_lon_harmonics)
     call ZMobj%init(nzmbas)
 
     ! Zonal average grid for history fields
@@ -262,6 +270,12 @@ contains
 
     real(r8) :: sheight(pcols,pver) ! pressure scale height (m)
 
+    ! reference pressure for potential temperature (TEM convention, 1000 hPa).
+    ! Note: state%exner is (ps/pmid)**kappa, i.e. referred to the local surface
+    ! pressure: its zonal variations follow the orography and add a spurious
+    ! stationary component to the theta deviations and to VTHzm/WTHzm.
+    real(r8), parameter :: pref_theta = 1.e5_r8   ! Pa
+
     if (.not.do_calc()) return
 
     do lchnk = begchunk,endchunk
@@ -271,8 +285,9 @@ contains
        ! scale height
        sheight(:ncol,:) = phys_state(lchnk)%t(:ncol,:) * rgas / ( mbarv(:ncol,:,lchnk) * grav ) ! meters
 
-       ! potential temperature
-       theta(:ncol,:,lchnk) = phys_state(lchnk)%t(:ncol,:) * phys_state(lchnk)%exner(:ncol,:)
+       ! potential temperature referred to 1000 hPa (not to the surface pressure)
+       theta(:ncol,:,lchnk) = phys_state(lchnk)%t(:ncol,:) &
+                            * (pref_theta/phys_state(lchnk)%pmid(:ncol,:))**cappav(:ncol,:,lchnk)
 
        ! vertical velocity
        w(:ncol,:,lchnk) = -sheight(:ncol,:) *  phys_state(lchnk)%omega(:ncol,:) / phys_state(lchnk)%pmid(:ncol,:)

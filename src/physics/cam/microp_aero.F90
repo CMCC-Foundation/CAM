@@ -30,7 +30,7 @@ use constituents,     only: cnst_get_ind
 use physics_types,    only: physics_state, physics_ptend, physics_ptend_init, physics_ptend_sum, &
                             physics_state_copy, physics_update
 use physics_buffer,   only: physics_buffer_desc, pbuf_get_index, pbuf_old_tim_idx, pbuf_get_field, &
-                            pbuf_get_chunk
+                            pbuf_get_chunk, pbuf_set_field
 use phys_control,     only: phys_getopts, use_hetfrz_classnuc
 use rad_constituents, only: rad_cnst_get_info, rad_cnst_get_aer_mmr, rad_cnst_get_aer_props, &
                             rad_cnst_get_mode_num
@@ -124,6 +124,8 @@ integer :: coarse_nacl_idx = -1  ! index of nacl in coarse mode
 integer :: coarse_so4_idx = -1  ! index of sulfate in coarse mode
 
 integer :: npccn_idx, rndst_idx, nacon_idx
+integer :: ccn_s01_idx = -1
+integer :: ccn_s02_idx = -1
 
 logical  :: separate_dust = .false.
 
@@ -154,6 +156,10 @@ subroutine microp_aero_register
 
    call pbuf_add_field('RNDST',      'physpkg',dtype_r8,(/pcols,pver,4/), rndst_idx)
    call pbuf_add_field('NACON',      'physpkg',dtype_r8,(/pcols,pver,4/), nacon_idx)
+   ! CCN at S=0.1% and S=0.2% (#/cm3, ambient), filled by ndrop, used by the
+   ! microphysics for the cloud-top CCN diagnostics (ACTCCN01, ACTCCN02)
+   call pbuf_add_field('CCN_S01',    'physpkg',dtype_r8,(/pcols,pver/), ccn_s01_idx)
+   call pbuf_add_field('CCN_S02',    'physpkg',dtype_r8,(/pcols,pver/), ccn_s02_idx)
 
    call nucleate_ice_cam_register()
    call hetfrz_classnuc_cam_register()
@@ -350,6 +356,10 @@ subroutine microp_aero_init(phys_state,pbuf2d)
          call endrun(routine//': cannot use hetfrz_classnuc without prognostic aerosols')
       endif
    endif
+
+   ! CCN at S=0.1% and S=0.2% for the cloud-top CCN diagnostics: defined before the first call of ndrop
+   call pbuf_set_field(pbuf2d, ccn_s01_idx, 0._r8)
+   call pbuf_set_field(pbuf2d, ccn_s02_idx, 0._r8)
 
 end subroutine microp_aero_init
 

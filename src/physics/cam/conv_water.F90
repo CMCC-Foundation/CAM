@@ -42,6 +42,10 @@
 
   integer :: ixcldice, ixcldliq
 
+  ! CMIP7 cli/clw diagnostics (CLITOT, CLWTOT)
+  integer :: ixrain = -1, ixsnow = -1, ixgraupel = -1   ! precipitating water species (if present)
+  integer :: icswp_idx = -1, cldfsnow_idx = -1          ! pbuf indices of the snow seen by radiation
+
 ! Namelist
 integer, parameter :: unset_int = huge(1)
 
@@ -140,8 +144,18 @@ end subroutine conv_water_readnl
 
    implicit none
 
+   integer :: ierr
+
    call cnst_get_ind('CLDICE', ixcldice)
    call cnst_get_ind('CLDLIQ', ixcldliq)
+
+   ! CMIP7 cli/clw: precipitating species (for the mass of air including all water
+   ! phases) and radiatively active snow; all optional
+   call cnst_get_ind('RAINQM', ixrain,    abort=.false.)
+   call cnst_get_ind('SNOWQM', ixsnow,    abort=.false.)
+   call cnst_get_ind('GRAUQM', ixgraupel, abort=.false.)
+   icswp_idx    = pbuf_get_index('ICSWP',    errcode=ierr)
+   cldfsnow_idx = pbuf_get_index('CLDFSNOW', errcode=ierr)
  
    icwmrsh_idx  = pbuf_get_index('ICWMRSH')
    icwmrdp_idx  = pbuf_get_index('ICWMRDP')
@@ -166,6 +180,12 @@ end subroutine conv_water_readnl
    call addfld ('FRECU',    (/ 'lev' /), 'A', '1', 'Fractional occurrence of cumulus with condensate')
    call addfld ('FRETOT',   (/ 'lev' /), 'A', '1', 'Fractional occurrence of cloud with condensate')
 
+   ! CMIP7 cli/clw
+   call addfld ('CLITOT',   (/ 'lev' /), 'A', 'kg/kg', &
+        'Grid-mean cloud ice (stratiform + convective + radiative snow) per mass of air incl. all water')
+   call addfld ('CLWTOT',   (/ 'lev' /), 'A', 'kg/kg', &
+        'Grid-mean cloud liquid (stratiform + convective) per mass of air incl. all water')
+
    end subroutine conv_water_init
 
    subroutine conv_water_4rad(state, pbuf, totg_liq, totg_ice)
@@ -189,7 +209,7 @@ end subroutine conv_water_readnl
    use physics_buffer, only : physics_buffer_desc, pbuf_get_field, pbuf_old_tim_idx
 
    use physics_types,   only: physics_state
-   use cam_history,     only: outfld
+   use cam_history,     only: outfld, hist_fld_active
    use phys_control,    only: phys_getopts
    
    implicit none
@@ -250,6 +270,13 @@ end subroutine conv_water_readnl
 
    integer :: lchnk
    integer :: ncol
+
+   ! CMIP7 cli/clw
+   real(r8), pointer :: icswp(:,:)       ! in-cloud snow water path used by radiation (kg/m2)
+   real(r8), pointer :: cldfsnow(:,:)    ! snow cloud fraction used by radiation
+   real(r8) :: cond(pcols,pver)          ! total condensed water (wet mixing ratio)
+   real(r8) :: clitot(pcols,pver)        ! cli: cloud ice per mass of air incl. all water phases
+   real(r8) :: clwtot(pcols,pver)        ! clw: cloud liquid per mass of air incl. all water phases
 
    ! --------- !
    ! Parameter !
@@ -428,6 +455,39 @@ end subroutine conv_water_readnl
    call outfld('FRESH',   fresh,       pcols, lchnk)
    call outfld('FREDP',   fredp,       pcols, lchnk)
    call outfld('FRECU',   frecu,       pcols, lchnk)
+
+   ! ------------------------------------------------------------------------ !
+   ! CMIP7 cli/clw: grid-mean cloud ice/liquid seen by radiation:             !
+   !   stratiform (CLDICE/CLDLIQ, incl. condensate detrained by deep         !
+   !   convection) + deep and shallow convective in-plume water (same as     !
+   !   GCIMRDP/GCLMRDP + GCIMRSH/GCLMRSH, phase from the stratiform ice     !
+   !   fraction) + snow as seen by radiation (ICSWP * CLDFSNOW * g / pdel,   !
+   !   i.e. PUMAS qsout reduced where CLDFSNOW < mincld; ice only).          !
+   !   The QSNOW pbuf field exists only with SILHS and is not used.          !
+   ! state%q are wet mixing ratios (per unit mass of dry air + vapour): they  !
+   ! are divided by (1 + total condensate) to refer them to the mass of air   !
+   ! including the water in all phases, as in the CMIP definition.            !
+   ! ------------------------------------------------------------------------ !
+   if (hist_fld_active('CLITOT') .or. hist_fld_active('CLWTOT')) then
+      cond(:ncol,:) = ls_liq(:ncol,:) + ls_ice(:ncol,:)
+      if (ixrain    > 0) cond(:ncol,:) = cond(:ncol,:) + state%q(:ncol,:,ixrain)
+      if (ixsnow    > 0) cond(:ncol,:) = cond(:ncol,:) + state%q(:ncol,:,ixsnow)
+      if (ixgraupel > 0) cond(:ncol,:) = cond(:ncol,:) + state%q(:ncol,:,ixgraupel)
+      cond(:ncol,:) = max(cond(:ncol,:), 0._r8)
+
+      clitot(:ncol,:) = ls_ice(:ncol,:) + totg_ice_dp(:ncol,:) + totg_ice_sh(:ncol,:)
+      clwtot(:ncol,:) = ls_liq(:ncol,:) + totg_liq_dp(:ncol,:) + totg_liq_sh(:ncol,:)
+      if (icswp_idx > 0 .and. cldfsnow_idx > 0) then
+         call pbuf_get_field(pbuf, icswp_idx, icswp)
+         call pbuf_get_field(pbuf, cldfsnow_idx, cldfsnow, start=(/1,1,itim_old/), kount=(/pcols,pver,1/))
+         clitot(:ncol,:) = clitot(:ncol,:) + icswp(:ncol,:) * cldfsnow(:ncol,:) * gravit / pdel(:ncol,:)
+      end if
+      clitot(:ncol,:) = clitot(:ncol,:) / (1._r8 + cond(:ncol,:))
+      clwtot(:ncol,:) = clwtot(:ncol,:) / (1._r8 + cond(:ncol,:))
+
+      call outfld('CLITOT', clitot, pcols, lchnk)
+      call outfld('CLWTOT', clwtot, pcols, lchnk)
+   end if
    call outfld('FRETOT',  fretot,      pcols, lchnk)
 
   end subroutine conv_water_4rad

@@ -121,8 +121,16 @@ module zonal_mean_mod
 !
 !         Usage: type(ZonalAverage_t):: ZA
 !         =========================================
-!           call ZA%init(lats,area,nlat,GEN_GAUSSLATS=.true.)
+!           call ZA%init(lats,area,nlat,GEN_GAUSSLATS=.true.,LON_HARMONICS=(/4,8,12/))
 !           --------------------------------------------------
+!               - Optional LON_HARMONICS: zonal wavenumbers whose signature in the
+!                 longitude distribution of the columns of each bin is removed by
+!                 modifying the column weights once at initialization (minimum-norm
+!                 correction). On the cubed sphere the bins sample longitude
+!                 non-uniformly with the 4-fold symmetry of the cube (wavenumbers
+!                 4, 8, 12, ...), which leaks those zonal wavenumbers of the data
+!                 into the bin averages and gives a zig-zag in latitude at high
+!                 latitudes. The run-time cost of binAvg is unchanged.
 !               - Given the latitude/area for the nlat meridional gridpoints, initialize
 !                 the ZonalAverage data structure for computing bin-averaging of physgrid
 !                 values. It is assumed that the domain of these gridpoints of the
@@ -155,10 +163,11 @@ module zonal_mean_mod
 
   use shr_kind_mod,    only: r8=>SHR_KIND_R8
   use phys_grid,       only: get_ncols_p, get_rlat_p, get_wght_all_p, get_nlcols_p
+  use phys_grid,       only: get_rlon_p
   use ppgrid,          only: begchunk, endchunk, pcols
   use shr_reprosum_mod,only: shr_reprosum_calc
   use cam_abortutils,  only: endrun, handle_allocate_error
-  use spmd_utils,      only: mpicom
+  use spmd_utils,      only: mpicom, masterproc, mpi_integer, mpi_max
   use physconst,       only: pi
   use phys_grid,       only: ngcols_p => num_global_phys_cols
   use cam_logfile,     only: iulog
@@ -981,7 +990,7 @@ contains
     !=======================================================================
 
     !=======================================================================
-    subroutine init_ZonalAverage(this,IO_lats,IO_area,I_nlat,GEN_GAUSSLATS)
+    subroutine init_ZonalAverage(this,IO_lats,IO_area,I_nlat,GEN_GAUSSLATS,LON_HARMONICS)
       !
       ! init_ZonalAverage: Initialize the ZonalAverage data structure for the
       !                    given nlat gridpoints. It is assumed that the domain
@@ -1001,6 +1010,7 @@ contains
       real(r8)     ,intent(inout):: IO_area(:)
       integer         ,intent(in):: I_nlat
       logical,optional,intent(in):: GEN_GAUSSLATS
+      integer,optional,intent(in):: LON_HARMONICS(:)
       !
       ! Local Values
       !--------------
@@ -1161,6 +1171,15 @@ contains
          call endrun('init_ZonalAverage -- ERROR in Anorm values')
       end if
 
+      ! Optional correction of the column weights for a non-uniform
+      ! longitude sampling of the bins (see LON_HARMONICS above)
+      !-------------------------------------------------------------
+      if (present(LON_HARMONICS)) then
+         if (size(LON_HARMONICS) > 0) then
+            call lon_sampling_correction(this, LON_HARMONICS)
+         end if
+      end if
+
       ! End Routine
       !------------
       deallocate(Clats)
@@ -1298,6 +1317,208 @@ contains
       deallocate(Asum)
 
     end subroutine calc_ZonalAverage_3DbinAvg
+    !=======================================================================
+
+    !=======================================================================
+    subroutine lon_sampling_correction(this, harm)
+      !
+      ! lon_sampling_correction: modify the column weights area_g of each bin,
+      !   w' = w * (1 + sum_k a_k b_k(lon)), b = (cos m lon, sin m lon) for m in harm,
+      !   with the minimum-norm coefficients a that make sum(w' b) = 0, i.e. the
+      !   weighted longitude sampling of the bin has no wavenumber m in harm.
+      !   The bin average with w' equals the m=0 coefficient of a weighted
+      !   least-squares fit c0 + sum_m (a_m cos + b_m sin) of the data in the bin.
+      !   Per bin, only the leading wavenumbers with 2*n < ncol-1 are used; a bin
+      !   is left unchanged if its system is singular or if any corrected weight
+      !   would fall below fac_min times the original weight.
+      !=====================================================================
+      class(ZonalAverage_t) :: this
+      integer, intent(in)   :: harm(:)
+
+      real(r8), parameter :: fac_min = 0.05_r8      ! minimum allowed w'/w
+      real(r8), parameter :: reg     = 1.e-12_r8    ! relative diagonal regularization
+
+      integer :: nh, nk, nv, nlcols, count, lchnk, ncols, cc, jlat, ib, k, l, ip, n, ku, info, ierr, astat
+      integer :: ncorr, nskip, nflag
+      real(r8) :: rlon, fac, tr
+      real(r8), allocatable :: bas(:), Vsum(:), Asum(:,:), coef(:,:), Anorm(:), gm(:,:), rv(:)
+      integer,  allocatable :: ipiv(:), flag_loc(:), flag_glb(:), nuse(:)
+      character(len=*), parameter :: subname = 'lon_sampling_correction'
+
+      external DGESV
+
+      nh = size(harm)
+      nk = 2*nh
+      nv = 1 + nk + (nk*(nk+1))/2              ! count, r(k), G(k,l) for l>=k
+      nlcols = get_nlcols_p()
+
+      allocate(bas(nk), coef(nk,this%nlat), nuse(this%nlat), stat=astat)
+      call handle_allocate_error(astat, subname, 'bas/coef/nuse')
+      allocate(Asum(nlcols, this%nlat*nv), Vsum(this%nlat*nv), stat=astat)
+      call handle_allocate_error(astat, subname, 'Asum/Vsum')
+
+      ! global sums per bin: number of columns, sum(w b_k), sum(w b_k b_l)
+      !------------------------------------------------------------------
+      Asum(:,:) = 0._r8
+      count = 0
+      do lchnk = begchunk, endchunk
+         ncols = get_ncols_p(lchnk)
+         do cc = 1, ncols
+            count = count + 1
+            jlat = this%idx_map(cc,lchnk)
+            rlon = get_rlon_p(lchnk,cc)
+            do n = 1, nh
+               bas(2*n-1) = cos(real(harm(n),r8)*rlon)
+               bas(2*n  ) = sin(real(harm(n),r8)*rlon)
+            end do
+            ib = (jlat-1)*nv
+            Asum(count, ib+1) = 1._r8
+            do k = 1, nk
+               Asum(count, ib+1+k) = this%area_g(cc,lchnk)*bas(k)
+            end do
+            ip = ib + 1 + nk
+            do k = 1, nk
+               do l = k, nk
+                  ip = ip + 1
+                  Asum(count, ip) = this%area_g(cc,lchnk)*bas(k)*bas(l)
+               end do
+            end do
+         end do
+      end do
+      call shr_reprosum_calc(Asum, Vsum, count, nlcols, this%nlat*nv, gbl_count=ngcols_p, commid=mpicom)
+      deallocate(Asum)
+
+      ! solve G a = -r in each bin (identical on all tasks)
+      !-----------------------------------------------------
+      coef(:,:) = 0._r8
+      nuse(:) = 0
+      nskip = 0
+      do jlat = 1, this%nlat
+         ib = (jlat-1)*nv
+         n = 0
+         do while (n < nh)
+            if (2*(n+1) < nint(Vsum(ib+1)) - 1) then
+               n = n + 1
+            else
+               exit
+            end if
+         end do
+         ku = 2*n
+         if (ku == 0) then
+            nskip = nskip + 1
+            cycle
+         end if
+         allocate(gm(ku,ku), rv(ku), ipiv(ku))
+         ip = ib + 1 + nk
+         do k = 1, nk
+            do l = k, nk
+               ip = ip + 1
+               if (k <= ku .and. l <= ku) then
+                  gm(k,l) = Vsum(ip)
+                  gm(l,k) = Vsum(ip)
+               end if
+            end do
+         end do
+         tr = 0._r8
+         do k = 1, ku
+            tr = tr + gm(k,k)
+         end do
+         do k = 1, ku
+            gm(k,k) = gm(k,k) + reg*tr/real(ku,r8)
+            rv(k) = -Vsum(ib+1+k)
+         end do
+         call DGESV(ku, 1, gm, ku, ipiv, rv, ku, info)
+         if (info == 0) then
+            coef(1:ku,jlat) = rv(1:ku)
+            nuse(jlat) = n
+         else
+            nskip = nskip + 1
+         end if
+         deallocate(gm, rv, ipiv)
+      end do
+
+      ! check the corrected weights; revert bins with too small weights
+      !-----------------------------------------------------------------
+      allocate(flag_loc(this%nlat), flag_glb(this%nlat), stat=astat)
+      call handle_allocate_error(astat, subname, 'flag')
+      flag_loc(:) = 0
+      do lchnk = begchunk, endchunk
+         ncols = get_ncols_p(lchnk)
+         do cc = 1, ncols
+            jlat = this%idx_map(cc,lchnk)
+            if (nuse(jlat) == 0) cycle
+            fac = lon_factor(get_rlon_p(lchnk,cc), harm, nuse(jlat), coef(:,jlat))
+            if (fac < fac_min) flag_loc(jlat) = 1
+         end do
+      end do
+      call MPI_Allreduce(flag_loc, flag_glb, this%nlat, mpi_integer, mpi_max, mpicom, ierr)
+      nflag = 0
+      do jlat = 1, this%nlat
+         if (nuse(jlat) > 0 .and. flag_glb(jlat) /= 0) then
+            nuse(jlat) = 0
+            nflag = nflag + 1
+         end if
+      end do
+
+      ! apply the correction to the column weights
+      !--------------------------------------------
+      do lchnk = begchunk, endchunk
+         ncols = get_ncols_p(lchnk)
+         do cc = 1, ncols
+            jlat = this%idx_map(cc,lchnk)
+            if (nuse(jlat) == 0) cycle
+            fac = lon_factor(get_rlon_p(lchnk,cc), harm, nuse(jlat), coef(:,jlat))
+            this%area_g(cc,lchnk) = this%area_g(cc,lchnk)*fac
+         end do
+      end do
+
+      ! new normalization: sum of the corrected weights in each bin
+      !-------------------------------------------------------------
+      allocate(Asum(nlcols, this%nlat), Anorm(this%nlat), stat=astat)
+      call handle_allocate_error(astat, subname, 'Asum/Anorm')
+      Asum(:,:) = 0._r8
+      count = 0
+      do lchnk = begchunk, endchunk
+         ncols = get_ncols_p(lchnk)
+         do cc = 1, ncols
+            count = count + 1
+            Asum(count, this%idx_map(cc,lchnk)) = this%area_g(cc,lchnk)
+         end do
+      end do
+      call shr_reprosum_calc(Asum, Anorm, count, nlcols, this%nlat, gbl_count=ngcols_p, commid=mpicom)
+      if (.not.all(Anorm(:) > 0._r8)) then
+         call endrun(subname//': non-positive bin weight sums after the correction')
+      end if
+      this%a_norm(:) = Anorm(:)
+
+      ncorr = 0
+      do jlat = 1, this%nlat
+         if (nuse(jlat) > 0) ncorr = ncorr + 1
+      end do
+      if (masterproc) then
+         write(iulog,*) subname//': removed longitude sampling wavenumbers ', harm
+         write(iulog,*) subname//': bins corrected = ', ncorr, ' skipped (few columns or singular) = ', nskip, &
+                        ' reverted (weights < ', fac_min, ') = ', nflag
+      end if
+
+      deallocate(bas, coef, nuse, Vsum, flag_loc, flag_glb, Asum, Anorm)
+
+    end subroutine lon_sampling_correction
+    !=======================================================================
+
+    !=======================================================================
+    real(r8) function lon_factor(rlon, harm, n, a)
+      ! weight factor 1 + sum_k a_k b_k(lon) using the first n wavenumbers of harm
+      real(r8), intent(in) :: rlon
+      integer,  intent(in) :: harm(:)
+      integer,  intent(in) :: n
+      real(r8), intent(in) :: a(:)
+      integer :: i
+      lon_factor = 1._r8
+      do i = 1, n
+         lon_factor = lon_factor + a(2*i-1)*cos(real(harm(i),r8)*rlon) + a(2*i)*sin(real(harm(i),r8)*rlon)
+      end do
+    end function lon_factor
     !=======================================================================
 
     !=======================================================================
