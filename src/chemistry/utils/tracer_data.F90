@@ -1386,7 +1386,8 @@ contains
           else if ( flds(f)%srf_fld ) then
              if ( file%unstructured ) then
                 ! read data directly onto the unstructureed phys grid -- assumes input data is on same grid as phys
-                call read_physgrid_2d( fids(i), flds(f)%fldnam,  recnos(i), flds(f)%input(i)%data(:,1,:) )
+                ! the variable read from the file is srcnam (name in the data file), not fldnam
+                call read_physgrid_2d( fids(i), flds(f)%srcnam,  recnos(i), flds(f)%input(i)%data(:,1,:) )
              else
                 cnt3( flds(f)%coords(LONDIM)) = file%nlon
                 cnt3( flds(f)%coords(LATDIM)) = file%nlat
@@ -1398,10 +1399,11 @@ contains
           else
              if ( file%unstructured ) then
                 ! read data directly onto the unstructureed phys grid -- assumes input data is on same grid as phys
+                ! the variable read from the file is srcnam (name in the data file), not fldnam
                 if ( file%alt_data ) then
-                   call read_physgrid_3d( fids(i), flds(f)%fldnam, 'altitude', file%nlev, recnos(i), flds(f)%input(i)%data(:,:,:) )
+                   call read_physgrid_3d( fids(i), flds(f)%srcnam, 'altitude', file%nlev, recnos(i), flds(f)%input(i)%data(:,:,:) )
                 else
-                   call read_physgrid_3d( fids(i), flds(f)%fldnam, 'lev', file%nlev, recnos(i), flds(f)%input(i)%data(:,:,:) )
+                   call read_physgrid_3d( fids(i), flds(f)%srcnam, 'lev', file%nlev, recnos(i), flds(f)%input(i)%data(:,:,:) )
                 end if
              else
                 cnt4(flds(f)%coords(LONDIM)) = file%nlon

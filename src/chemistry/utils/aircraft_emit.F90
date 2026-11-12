@@ -34,7 +34,7 @@ module aircraft_emit
      character(len=11)  :: species
      character(len=8)  :: units
      integer                   :: nsectors
-     character(len=32),pointer :: sectors(:)
+     character(len=80),pointer :: sectors(:)   ! 'species' or 'species:variable in the data file'
      type(trfld),pointer       :: fields(:)
      type(trfile)              :: file
   end type forcing_air
@@ -58,7 +58,13 @@ module aircraft_emit
   integer            :: index_map(N_AERO)
   character(len=256) :: air_specifier(N_AERO)=''
   character(len=256) :: air_datapath=''
-  character(len=24)  :: air_type = 'CYCLICAL_LIST' ! 'CYCLICAL_LIST'
+  character(len=24)  :: air_type = 'CYCLICAL_LIST' ! 'CYCLICAL_LIST' | 'CYCLICAL' | 'SERIAL'
+  ! CYCLICAL_LIST: each air_specifier entry points to a text file listing the netCDF data files
+  ! CYCLICAL     : each air_specifier entry points directly to the netCDF data file, whose
+  !                records of year air_cycle_yr are cycled (e.g. piControl)
+  ! SERIAL       : each air_specifier entry points directly to the netCDF data file, read
+  !                following the model date (e.g. historical, scenarios)
+  integer            :: air_cycle_yr = 0           ! cycle year, required (> 0) for CYCLICAL only
 
   logical            :: rmv_file = .false.
 
@@ -66,6 +72,8 @@ module aircraft_emit
 
   integer :: aircraft_cnt = 0
   character(len=16) :: spc_name_list(N_AERO)
+  character(len=80) :: spc_field_list(N_AERO)  ! field specifier passed to tracer_data:
+                                               ! 'species' or 'species:variable in the data file'
   character(len=256) :: spc_flist(N_AERO),spc_fname(N_AERO)
   logical :: dist(N_AERO)
 
@@ -97,8 +105,9 @@ contains
     use tracer_data,    only: incr_filename
     use constituents,   only: cnst_add
 
-    integer :: i,idx, mm, ind, n
+    integer :: i, j, idx, mm, ind, n
     character(len=16) :: spc_name
+    character(len=80) :: spc_field
     character(len=256) :: filelist, curr_filename
     character(len=128) :: long_name
     logical            :: has_fixed_ubc=.false.
@@ -111,6 +120,18 @@ contains
     aircraft_cnt = 0
     if (air_specifier(1) == "") return
 
+    select case (trim(air_type))
+    case ('CYCLICAL_LIST', 'SERIAL')
+       if (air_cycle_yr /= 0) call endrun('aircraft_emit_register: aircraft_cycle_yr can be set only '// &
+                                          'for aircraft_type = CYCLICAL')
+    case ('CYCLICAL')
+       if (air_cycle_yr <= 0) call endrun('aircraft_emit_register: aircraft_type = CYCLICAL requires '// &
+                                          'aircraft_cycle_yr > 0')
+    case default
+       call endrun('aircraft_emit_register: invalid aircraft_type '//trim(air_type)// &
+                   ' (valid: CYCLICAL_LIST | CYCLICAL | SERIAL)')
+    end select
+
 ! count aircraft emission species used in the simulation
     count_emis: do n=1,N_AERO
 	
@@ -118,9 +139,23 @@ contains
 	    exit count_emis
         endif
 
-        i = scan(air_specifier(n),'->')
-        spc_name = trim(adjustl(air_specifier(n)(:i-1)))
-        filelist = trim(adjustl(air_specifier(n)(i+2:)))
+        ! entry format: 'species -> file' or 'species:variable -> file', where variable is the
+        ! name of the variable in the data file (default: the species name)
+        i = index(air_specifier(n),'->')
+        if (i < 2) call endrun('aircraft_emit_register: invalid aircraft_specifier entry "'// &
+                               trim(air_specifier(n))//'" (expected: species[:variable] -> file)')
+        spc_field = trim(adjustl(air_specifier(n)(:i-1)))
+        filelist  = trim(adjustl(air_specifier(n)(i+2:)))
+
+        j = index(spc_field, ':')
+        if (j > 0) then
+           spc_name = trim(adjustl(spc_field(:j-1)))
+           if (len_trim(spc_field(j+1:)) == 0) call endrun('aircraft_emit_register: empty variable name '// &
+                                                           'in aircraft_specifier entry "'//trim(air_specifier(n))//'"')
+           spc_field = trim(spc_name)//':'//trim(adjustl(spc_field(j+1:)))
+        else
+           spc_name = trim(spc_field)
+        end if
 
         mm = get_aircraft_ndx(spc_name)
         if( mm < 1 ) then
@@ -132,13 +167,21 @@ contains
         aircraft_cnt = aircraft_cnt + 1
         call pbuf_add_field(aero_names(mm),'physpkg',dtype_r8,(/pcols,pver/),idx)
 
-        spc_flist(aircraft_cnt) = filelist
-        spc_name_list(aircraft_cnt) = spc_name
+        spc_name_list(aircraft_cnt)  = spc_name
+        spc_field_list(aircraft_cnt) = spc_field
         index_map(aircraft_cnt) = mm
 
-        curr_filename=''	
-        spc_fname(aircraft_cnt) = incr_filename( curr_filename, filenames_list=spc_flist(aircraft_cnt), &
-                                                 datapath=air_datapath)
+        if (trim(air_type) /= 'CYCLICAL_LIST') then
+           ! CYCLICAL, SERIAL: the specifier gives the netCDF data file directly (no list of files)
+           spc_flist(aircraft_cnt) = ''
+           spc_fname(aircraft_cnt) = filelist
+        else
+           ! CYCLICAL_LIST: the specifier gives a text file with the list of data files
+           spc_flist(aircraft_cnt) = filelist
+           curr_filename=''
+           spc_fname(aircraft_cnt) = incr_filename( curr_filename, filenames_list=spc_flist(aircraft_cnt), &
+                                                    datapath=air_datapath)
+        end if
 
         if( advective_tracer(mm) ) then
           long_name = 'aircraft_'//trim(spc_name)
@@ -158,12 +201,14 @@ contains
     use cam_history,    only: addfld, add_default
     use tracer_data,    only: trcdata_init
     use phys_control,   only: phys_getopts
+    use dycore,         only: dycore_is
 
     implicit none
 
     character(len=16)  :: spc_name
 
     integer :: astat, m
+    integer :: cycle_yr                 ! cycle year passed to trcdata_init (0 unless CYCLICAL)
 
     logical :: history_chemistry
 
@@ -207,17 +252,27 @@ contains
           !         default settings
           !-----------------------------------------------------------------------
           forcings_air(m)%file%stepTime    = .true.  ! Aircraft data is not to be interpolated in time
-          forcings_air(m)%file%cyclical_list    = .true.  ! Aircraft data cycles over the filename list
-          forcings_air(m)%file%weight_by_lat     = .true.  ! Aircraft data -  interpolated with latitude weighting
+          ! CYCLICAL_LIST: cycles over the filename list; CYCLICAL: cycles over the records of
+          ! one year of a single file; SERIAL: neither (trcdata_init sets these flags again
+          ! from air_type)
+          forcings_air(m)%file%cyclical_list = (trim(air_type) == 'CYCLICAL_LIST')
+          forcings_air(m)%file%cyclical      = (trim(air_type) == 'CYCLICAL')
+          ! Aircraft data - horizontal interpolation with latitude weighting; not implemented in
+          ! tracer_data for unstructured dycores (SE): there the data are read directly on the
+          ! physics grid (ncol files) or interpolated bilinearly (lat-lon files)
+          forcings_air(m)%file%weight_by_lat     = .not. dycore_is('UNSTRUCTURED')
           forcings_air(m)%file%conserve_column = .true. ! Aircraft data - vertically interpolated to conserve the total column
           forcings_air(m)%file%dist = dist(m)
           forcings_air(m)%species          = spc_name
-          forcings_air(m)%sectors          = spc_name ! Only one species per file for aircraft data
+          forcings_air(m)%sectors          = spc_field_list(m) ! Only one species per file for aircraft data
           forcings_air(m)%nsectors         = 1
           forcings_air(m)%filelist         = spc_flist(m)
 !         forcings_air(m)%file%curr_filename    = spc_fname(m)
           forcings_air(m)%filename         = spc_fname(m)
     end do species_loop
+
+    cycle_yr = 0
+    if (trim(air_type) == 'CYCLICAL') cycle_yr = air_cycle_yr
 
     if (masterproc) then
        !-----------------------------------------------------------------------
@@ -228,13 +283,19 @@ contains
        write(iulog,*) ' '
        write(iulog,*) 'aircraft_emit timing specs'
        write(iulog,*) 'type = ',air_type
+       if (trim(air_type) == 'CYCLICAL') write(iulog,*) 'cycle year = ',cycle_yr
        write(iulog,*) ' '
        write(iulog,*) 'there are ',aircraft_cnt,' species of aircraft emission'
        do m = 1,aircraft_cnt
           write(iulog,*) ' '
           write(iulog,*) 'forcing type ',m
           write(iulog,*) 'species = ',trim(forcings_air(m)%species)
-          write(iulog,*) 'filelist= ',trim(forcings_air(m)%filelist)
+          write(iulog,*) 'field specifier = ',trim(spc_field_list(m))
+          if (trim(air_type) /= 'CYCLICAL_LIST') then
+             write(iulog,*) 'filename= ',trim(forcings_air(m)%filename)
+          else
+             write(iulog,*) 'filelist= ',trim(forcings_air(m)%filelist)
+          end if
        end do
        write(iulog,*) ' '
     endif
@@ -247,7 +308,7 @@ contains
        allocate (forcings_air(m)%file%in_pbuf(size(forcings_air(m)%sectors)))
        forcings_air(m)%file%in_pbuf(:) = .true.
        call trcdata_init( forcings_air(m)%sectors, forcings_air(m)%filename, forcings_air(m)%filelist, air_datapath, &
-                          forcings_air(m)%fields, forcings_air(m)%file, rmv_file, 0, 0, 0, air_type)
+                          forcings_air(m)%fields, forcings_air(m)%file, rmv_file, cycle_yr, 0, 0, air_type)
         
 
        number_flds = 0
@@ -400,14 +461,16 @@ contains
    character(len=256) :: aircraft_specifier(N_AERO)
    character(len=256) :: aircraft_datapath
    character(len=24)  :: aircraft_type 
+   integer            :: aircraft_cycle_yr
 
-   namelist /aircraft_emit_nl/  aircraft_specifier, aircraft_datapath, aircraft_type
+   namelist /aircraft_emit_nl/  aircraft_specifier, aircraft_datapath, aircraft_type, aircraft_cycle_yr
    !-----------------------------------------------------------------------------
 
    ! Initialize namelist variables from local module variables.
    aircraft_specifier= air_specifier
    aircraft_datapath = air_datapath
    aircraft_type     = air_type
+   aircraft_cycle_yr = air_cycle_yr
 
    ! Read namelist
    if (masterproc) then
@@ -429,12 +492,14 @@ contains
    call mpibcast(aircraft_specifier,len(aircraft_specifier(1))*N_AERO,     mpichar, 0, mpicom)
    call mpibcast(aircraft_datapath, len(aircraft_datapath),                mpichar, 0, mpicom)
    call mpibcast(aircraft_type,     len(aircraft_type),                    mpichar, 0, mpicom)
+   call mpibcast(aircraft_cycle_yr, 1,                                     mpiint,  0, mpicom)
 #endif
 
    ! Update module variables with user settings.
    air_specifier  = aircraft_specifier
    air_datapath   = aircraft_datapath
    air_type       = aircraft_type
+   air_cycle_yr   = aircraft_cycle_yr
 
  end subroutine aircraft_emit_readnl
 

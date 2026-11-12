@@ -6618,9 +6618,26 @@ Default: set by build-namelist.
 </entry>
 
 <entry id="aircraft_type" type="char*32" category="cam_chem"
-       group="aircraft_emit_nl" valid_values="CYCLICAL_LIST,SERIAL" >
+       group="aircraft_emit_nl" valid_values="CYCLICAL,CYCLICAL_LIST,SERIAL" >
 Type of time interpolation for data in aircraft aerosol files.
+'CYCLICAL_LIST': each aircraft_specifier entry gives a text file with the list of
+                 netCDF data files, cycled over the list.
+'CYCLICAL'     : each aircraft_specifier entry gives the netCDF data file directly;
+                 the records of year aircraft_cycle_yr are cycled (e.g. piControl).
+                 Requires aircraft_cycle_yr > 0.
+'SERIAL'       : each aircraft_specifier entry gives the netCDF data file directly;
+                 the records are read following the model date (e.g. historical,
+                 scenarios). The file must cover the whole simulated period.
 Default: 'CYCLICAL_LIST'
+</entry>
+
+<entry id="aircraft_cycle_yr" type="integer" category="cam_chem"
+       group="aircraft_emit_nl" valid_values="" >
+Cycle year of the aircraft emission data for aircraft_type = 'CYCLICAL':
+the records of this year are repeated every model year. Required (> 0) for
+'CYCLICAL'; it must not be set for 'CYCLICAL_LIST' and 'SERIAL' (the model
+stops with an error).
+Default: unset (0 in the code)
 </entry>
 
 <entry id="aircraft_co2_file" type="char*256" input_pathname="abs" category="cam_chem"
