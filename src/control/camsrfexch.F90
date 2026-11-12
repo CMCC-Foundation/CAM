@@ -514,7 +514,8 @@ subroutine cam_export(state,cam_out,pbuf)
    end do
 
    !cam_out%co2diag(:ncol) = chem_surfvals_get('CO2VMR') * 1.0e+6_r8
-   !if (masterproc) write(iulog,*) 'camsrfexch: chem_surfvals_get  ', cam_out%co2diag(:ncol)
+   !if (masterproc) write(iulog,*) 'camsrfexch: before co2diag ', cam_out%co2diag(:ncol)
+   !if (masterproc) write(iulog,*) 'camsrfexch: before co2prog ', cam_out%co2prog(:ncol)
    co2_mmr_to_vmr = 1.0e+6_r8 *mwdry/mwco2
    if (co2_transport()) then
       do i=1,ncol
@@ -525,7 +526,8 @@ subroutine cam_export(state,cam_out,pbuf)
          cam_out%co2diag(i) = co2_mmr(i,pver) * co2_mmr_to_vmr
       end do
    end if
-   !if (masterproc) write(iulog,*) 'camsrfexch: pbuf  ', cam_out%co2diag(:ncol)
+   !if (masterproc) write(iulog,*) 'camsrfexch: after co2diag ', cam_out%co2diag(:ncol)
+   !if (masterproc) write(iulog,*) 'camsrfexch: after co2prog ', cam_out%co2prog(:ncol)
 
    ! get bottom layer ozone concentrations to export to surface models
    if (srf_ozone_idx > 0) then
