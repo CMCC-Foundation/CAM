@@ -328,6 +328,9 @@ contains
        if (history_chemistry) then
           call add_default( trim(spc_name), 1, ' ' )
        end if
+       call addfld( 'TM'//trim(spc_name), 1, 'A', 'kg/m2/s',&
+                    'integrated aircraft emission '//trim(spc_name) )
+       call add_default( 'TM'//trim(spc_name), 1, ' ' )
    end do
 
 
@@ -364,6 +367,7 @@ contains
     integer :: ind,c,ncol,i,caseid,m,n
     real(r8) :: to_mmr(pcols,pver)
     real(r8),pointer :: tmpptr(:,:)
+    real(r8) :: columnmass(pcols)
    
 ! C.-C. Chen
     real(r8) :: wght(pcols)
@@ -436,6 +440,10 @@ contains
 
              call outfld( forcings_air(m)%fields(i)%fldnam, &
                   tmpptr(:ncol,:), ncol, state(c)%lchnk )
+
+             columnmass(:ncol) = sum(tmpptr(:ncol,:), 2)
+             call outfld( 'TM'//trim(forcings_air(m)%fields(i)%fldnam), &
+                  columnmass(:ncol), ncol, state(c)%lchnk )
 
           enddo
        enddo

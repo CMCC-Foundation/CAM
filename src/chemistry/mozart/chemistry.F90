@@ -851,6 +851,7 @@ end function chem_is_active
     use hco_cc_emissions, only: hco_set_srf_emissions
     use fire_emissions,   only: fire_emissions_srf
     use ocean_emis,       only: ocean_emis_getflux
+    use co2_cycle,        only: co2_transport, c_i
 
     ! Arguments:
 
@@ -870,9 +871,18 @@ end function chem_is_active
     ncol = state%ncol
 
     ! initialize chemistry constituent surface fluxes to zero
+    ! With the CO2 cycle active (co2_flag) the surface flux of CO2 has already been set from the
+    ! coupler import (land, ocean) and the fuel/ocean data files (atm_import_export); when CO2 is
+    ! also a species of the chemistry mechanism (e.g. ghg_mam4) it must not be reset here,
+    ! otherwise CO2 never receives the surface fluxes (SFCO2 and SFCO2_* are written earlier, by diag_surf).
     do m = 2,pcnst
        n = map2chm(m)
-       if (n>0) cam_in%cflx(:,m) = 0._r8
+       if (n>0) then
+          if (co2_transport()) then
+             if (m == c_i(4)) cycle
+          end if
+          cam_in%cflx(:,m) = 0._r8
+       end if
     enddo
 
     ! aerosol emissions ...
