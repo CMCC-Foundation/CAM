@@ -71,6 +71,7 @@ module aircraft_emit
   integer :: number_flds
 
   integer :: aircraft_cnt = 0
+  logical :: has_vint(N_AERO) = .false.        ! vertical integral TM<species> written (ac_CO2 only)
   character(len=16) :: spc_name_list(N_AERO)
   character(len=80) :: spc_field_list(N_AERO)  ! field specifier passed to tracer_data:
                                                ! 'species' or 'species:variable in the data file'
@@ -198,7 +199,7 @@ contains
 !-------------------------------------------------------------------
 ! **** Initialize the aircraft aerosol data handling ****
 !-------------------------------------------------------------------
-    use cam_history,    only: addfld, add_default
+    use cam_history,    only: addfld, add_default, horiz_only
     use tracer_data,    only: trcdata_init
     use phys_control,   only: phys_getopts
     use dycore,         only: dycore_is
@@ -328,6 +329,16 @@ contains
        if (history_chemistry) then
           call add_default( trim(spc_name), 1, ' ' )
        end if
+       ! vertical integral (column total of the emission) only for ac_CO2, given as a flux per
+       ! layer (kg m-2 s-1) and used by co2_cycle; same units as the data
+       has_vint(m) = trim(spc_name) == 'ac_CO2'
+       if (has_vint(m)) then
+          call addfld( 'TM'//trim(spc_name), horiz_only, 'A', forcings_air(m)%fields(1)%units, &
+                       'vertically integrated aircraft emission '//trim(spc_name) )
+          if (history_chemistry) then
+             call add_default( 'TM'//trim(spc_name), 1, ' ' )
+          end if
+       end if
    end do
 
 
@@ -364,6 +375,7 @@ contains
     integer :: ind,c,ncol,i,caseid,m,n
     real(r8) :: to_mmr(pcols,pver)
     real(r8),pointer :: tmpptr(:,:)
+    real(r8) :: columnmass(pcols)
    
 ! C.-C. Chen
     real(r8) :: wght(pcols)
@@ -406,7 +418,7 @@ contains
 
           ind = index_map(i)
 
-!$OMP PARALLEL DO PRIVATE (C, NCOL, TO_MMR, tmpptr, pbuf_chnk)
+!$OMP PARALLEL DO PRIVATE (C, NCOL, TO_MMR, tmpptr, pbuf_chnk, wght, columnmass)
           do c = begchunk,endchunk
              ncol = state(c)%ncol
 
@@ -436,6 +448,13 @@ contains
 
              call outfld( forcings_air(m)%fields(i)%fldnam, &
                   tmpptr(:ncol,:), ncol, state(c)%lchnk )
+
+             ! vertical integral of the flux per layer: column total of the emission (ac_CO2 only)
+             if (has_vint(m)) then
+                columnmass(:ncol) = sum(tmpptr(:ncol,:), 2)
+                call outfld( 'TM'//trim(forcings_air(m)%fields(i)%fldnam), &
+                     columnmass(:ncol), ncol, state(c)%lchnk )
+             end if
 
           enddo
        enddo
